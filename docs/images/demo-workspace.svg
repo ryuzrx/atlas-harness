@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 680" role="img" aria-labelledby="title description">
+  <title id="title">Atlas demo workspace</title>
+  <desc id="description">A fictional Atlas chat for Alex Example, working on a Sample Store project.</desc>
+  <defs>
+    <linearGradient id="canvas" x2="0" y2="1"><stop stop-color="#1b1c20"/><stop offset="1" stop-color="#111214"/></linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000" flood-opacity=".28"/></filter>
+  </defs>
+  <rect x="10" y="10" width="1180" height="660" rx="26" fill="url(#canvas)" stroke="#303136" stroke-width="2"/>
+  <rect x="11" y="11" width="238" height="658" rx="25" fill="#151619"/>
+  <path d="M249 12v656" stroke="#303136"/>
+  <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">
+    <path d="M37 48l12-24 15 24-7-4-8-13-7 13z" fill="#f5f5f7"/>
+    <text x="76" y="45" fill="#f5f5f7" font-size="21" font-weight="650">Atlas</text>
+    <rect x="27" y="72" width="98" height="37" rx="12" fill="#27282d"/>
+    <text x="50" y="96" fill="#f5f5f7" font-size="14" font-weight="600">◉  Chat</text>
+    <text x="151" y="96" fill="#999ba3" font-size="14">Work</text>
+    <text x="35" y="151" fill="#c3c4ca" font-size="14">✦  Agents</text>
+    <text x="35" y="187" fill="#c3c4ca" font-size="14">▱  Models</text>
+    <text x="35" y="223" fill="#c3c4ca" font-size="14">▷  Runs</text>
+    <text x="35" y="277" fill="#85878f" font-size="12" font-weight="600" letter-spacing="1.2">CHATS</text>
+    <rect x="25" y="294" width="200" height="39" rx="9" fill="#24252a"/>
+    <text x="39" y="319" fill="#f2f2f4" font-size="13">Checkout review</text>
+    <text x="39" y="355" fill="#a7a8af" font-size="13">Sample Store launch</text>
+    <text x="39" y="390" fill="#a7a8af" font-size="13">API notes</text>
+    <circle cx="50" cy="617" r="18" fill="#303137"/>
+    <text x="50" y="622" fill="#f5f5f7" font-size="12" text-anchor="middle" font-weight="600">AE</text>
+    <text x="78" y="614" fill="#f1f1f3" font-size="13" font-weight="600">Alex Example</text>
+    <text x="78" y="634" fill="#93959d" font-size="12">Demo Workspace</text>
+
+    <text x="286" y="57" fill="#f5f5f7" font-size="16" font-weight="600">Checkout review</text>
+    <text x="286" y="84" fill="#a4a6ad" font-size="12">Sample Store  ·  Local workspace</text>
+
+    <rect x="657" y="124" width="484" height="93" rx="18" fill="#28292e"/>
+    <text x="682" y="158" fill="#f2f2f4" font-size="15">Can you review the checkout flow and list</text>
+    <text x="682" y="182" fill="#f2f2f4" font-size="15">the edge cases we should cover?</text>
+    <rect x="286" y="244" width="665" height="264" rx="18" fill="#191a1e" stroke="#2d2e33"/>
+    <circle cx="313" cy="276" r="13" fill="#34353b"/>
+    <path d="M309 282l5-11 6 11-3-2-3-5-2 5z" fill="#f5f5f7"/>
+    <text x="338" y="281" fill="#999ba3" font-size="12">Atlas · Qwen 3 14B</text>
+    <text x="313" y="322" fill="#f0f0f2" font-size="15" font-weight="600">Suggested edge cases</text>
+    <circle cx="321" cy="352" r="3" fill="#aeb0b7"/><text x="337" y="357" fill="#d3d4d8" font-size="14">A declined or expired payment method</text>
+    <circle cx="321" cy="382" r="3" fill="#aeb0b7"/><text x="337" y="387" fill="#d3d4d8" font-size="14">A retry after a network interruption</text>
+    <circle cx="321" cy="412" r="3" fill="#aeb0b7"/><text x="337" y="417" fill="#d3d4d8" font-size="14">Two rapid submissions of the same order</text>
+    <circle cx="321" cy="442" r="3" fill="#aeb0b7"/><text x="337" y="447" fill="#d3d4d8" font-size="14">An empty cart or an item that became unavailable</text>
+    <text x="313" y="481" fill="#999ba3" font-size="12">I can turn these into a focused test checklist next.</text>
+
+    <rect x="286" y="536" width="855" height="91" rx="18" fill="#1b1c20" stroke="#383a40" filter="url(#shadow)"/>
+    <text x="310" y="570" fill="#777a82" font-size="15">Message Atlas...</text>
+    <circle cx="315" cy="600" r="13" fill="#292a2f"/><text x="315" y="605" fill="#dedfe2" font-size="18" text-anchor="middle">+</text>
+    <rect x="349" y="586" width="122" height="28" rx="14" fill="#292a2f"/>
+    <text x="364" y="605" fill="#dedfe2" font-size="12">◈  Agent</text>
+    <rect x="480" y="586" width="181" height="28" rx="14" fill="#292a2f"/>
+    <text x="496" y="605" fill="#dedfe2" font-size="12">▦  Qwen 3 14B</text>
+    <rect x="669" y="586" width="110" height="28" rx="14" fill="#292a2f"/>
+    <text x="686" y="605" fill="#dedfe2" font-size="12">⚒  Tools</text>
+    <circle cx="1104" cy="599" r="17" fill="#f5f5f7"/><path d="M1104 608v-17m-7 7 7-7 7 7" fill="none" stroke="#161719" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

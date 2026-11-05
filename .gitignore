@@ -1,0 +1,13 @@
+.venv/
+.tools/
+node_modules/
+dist/
+build/
+__pycache__/
+*.pyc
+.pytest_cache/
+.claude/
+.DS_Store
+*.log
+.env
+.env.*

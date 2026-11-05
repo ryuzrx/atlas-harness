@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="340" viewBox="0 0 980 340" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Automatic team model assignment</title>
+  <desc id="desc">Atlas checks connected endpoints, selects a model for each agent tier, and preserves any model already assigned by the user.</desc>
+  <rect width="980" height="340" rx="24" fill="#F5F5F7"/>
+  <text x="42" y="48" fill="#171719" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="19" font-weight="650">Team model assignment</text>
+  <text x="42" y="76" fill="#64646B" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13">New teams choose from reachable endpoints. Existing choices stay in place.</text>
+
+  <rect x="42" y="112" width="248" height="178" rx="16" fill="#FFFFFF" stroke="#D9D9DE"/>
+  <circle cx="70" cy="145" r="13" fill="#E9E9ED"/>
+  <path d="M65 145h10M70 140v10" stroke="#36363B" stroke-width="1.8" stroke-linecap="round"/>
+  <text x="94" y="151" fill="#171719" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="15" font-weight="600">Connected endpoints</text>
+  <rect x="60" y="174" width="212" height="30" rx="8" fill="#F5F5F7"/>
+  <circle cx="76" cy="189" r="4" fill="#33845A"/>
+  <text x="88" y="194" fill="#36363B" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12">Local models</text>
+  <text x="250" y="194" text-anchor="end" fill="#77777F" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11">reachable</text>
+  <rect x="60" y="214" width="212" height="30" rx="8" fill="#F5F5F7"/>
+  <circle cx="76" cy="229" r="4" fill="#33845A"/>
+  <text x="88" y="234" fill="#36363B" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12">Cloud APIs</text>
+  <text x="250" y="234" text-anchor="end" fill="#77777F" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11">reachable</text>
+  <text x="60" y="270" fill="#77777F" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11">Unavailable endpoints are skipped</text>
+
+  <path d="M304 201h42m-8-8 8 8-8 8" stroke="#8A8A92" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="356" y="112" width="272" height="178" rx="16" fill="#FFFFFF" stroke="#D9D9DE"/>
+  <text x="378" y="148" fill="#171719" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="15" font-weight="600">Choose by agent role</text>
+  <rect x="378" y="166" width="228" height="31" rx="8" fill="#F5F5F7"/>
+  <text x="392" y="186" fill="#36363B" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12">Reasoning</text>
+  <text x="590" y="186" text-anchor="end" fill="#64646B" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11">larger context</text>
+  <rect x="378" y="205" width="228" height="31" rx="8" fill="#F5F5F7"/>
+  <text x="392" y="225" fill="#36363B" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12">Coding</text>
+  <text x="590" y="225" text-anchor="end" fill="#64646B" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11">tool support</text>
+  <rect x="378" y="244" width="228" height="31" rx="8" fill="#F5F5F7"/>
+  <text x="392" y="264" fill="#36363B" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12">Light</text>
+  <text x="590" y="264" text-anchor="end" fill="#64646B" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11">smaller model</text>
+
+  <path d="M642 201h42m-8-8 8 8-8 8" stroke="#8A8A92" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="694" y="112" width="244" height="178" rx="16" fill="#FFFFFF" stroke="#D9D9DE"/>
+  <text x="716" y="148" fill="#171719" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="15" font-weight="600">Your team</text>
+  <rect x="716" y="166" width="200" height="42" rx="9" fill="#F5F5F7"/>
+  <circle cx="733" cy="187" r="5" fill="#6F61D9"/>
+  <text x="747" y="191" fill="#36363B" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12">Lead · model assigned</text>
+  <rect x="716" y="216" width="200" height="42" rx="9" fill="#F5F5F7"/>
+  <circle cx="733" cy="237" r="5" fill="#6F61D9"/>
+  <text x="747" y="241" fill="#36363B" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12">Engineer · model assigned</text>
+  <text x="716" y="277" fill="#77777F" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11">Manual model choices are preserved</text>
+</svg>
