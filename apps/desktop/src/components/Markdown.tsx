@@ -1,0 +1,85 @@
+import React, { useState } from "react";
+import { Check, Copy } from "lucide-react";
+import { openExternal } from "../api";
+
+/** Small, safe Markdown renderer for chat: React elements only, never innerHTML. */
+
+function inline(text: string, key = 0): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  // Bold/italic may wrap across soft line breaks inside one paragraph; relative links render as plain text.
+  const re = /(`[^`\n]+`)|(\*\*[^*]+?\*\*)|(\*[^*\s][^*]*?\*|\b_[^_\n]+_\b)|(\[[^\]\n]+\]\(([^)\s]+)\))/g;
+  const push = (s: string) => s.split("\n").forEach((part, j) => { if (j) out.push(<br key={`${key}-br${i++}`} />); if (part) out.push(part); });
+  let last = 0, m: RegExpExecArray | null, i = 0;
+  while ((m = re.exec(text))) {
+    if (m.index > last) push(text.slice(last, m.index));
+    const t = m[0];
+    const k = `${key}-${i++}`;
+    if (m[1]) out.push(<code key={k}>{t.slice(1, -1)}</code>);
+    else if (m[2]) out.push(<strong key={k}>{t.slice(2, -2)}</strong>);
+    else if (m[3]) out.push(<em key={k}>{t.slice(1, -1)}</em>);
+    else if (m[4] && !/^https?:\/\//.test(m[5])) out.push(t.slice(1, t.indexOf("]")));
+    else if (m[4]) { const url = m[5]; out.push(<a key={k} href={url} title={url} onClick={(e) => { e.preventDefault(); openExternal(url); }}>{t.slice(1, t.indexOf("]"))}</a>); }
+    last = m.index + t.length;
+  }
+  if (last < text.length) push(text.slice(last));
+  return out;
+}
+
+function CodeBlock({ code, lang }: { code: string; lang: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <pre className="group relative">
+      <div className="flex items-center justify-between h-8 pl-3.5 pr-1.5 border-b border-line text-[11.5px] text-ink-3">
+        <span>{lang || "code"}</span>
+        <button onClick={() => { navigator.clipboard?.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 1200); }}
+          aria-label="Copy code" className="h-6 px-2 rounded-[6px] flex items-center gap-1 text-ink-3 hover:text-ink hover:bg-hover">
+          {copied ? <Check size={12} /> : <Copy size={12} />}{copied ? "Copied" : "Copy"}</button>
+      </div>
+      <code>{code}</code>
+    </pre>
+  );
+}
+
+export function Markdown({ text }: { text: string }) {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const blocks: React.ReactNode[] = [];
+  let i = 0, k = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const fence = line.match(/^\s*```\s*([\w+-]*)/);
+    if (fence) {
+      const body: string[] = [];
+      i++;
+      while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) body.push(lines[i++]);
+      i++; // closing fence (or end of a still-streaming block)
+      blocks.push(<CodeBlock key={k++} code={body.join("\n")} lang={fence[1]} />);
+      continue;
+    }
+    const h = line.match(/^(#{1,3})\s+(.*)/);
+    if (h) {
+      const Tag = (["h1", "h2", "h3"] as const)[h[1].length - 1];
+      blocks.push(<Tag key={k++}>{inline(h[2], k)}</Tag>);
+      i++;
+      continue;
+    }
+    if (/^\s*([-*•]|\d+[.)])\s+/.test(line)) {
+      const ordered = /^\s*\d+[.)]\s+/.test(line);
+      const items: string[] = [];
+      while (i < lines.length && /^\s*([-*•]|\d+[.)])\s+/.test(lines[i])) items.push(lines[i++].replace(/^\s*([-*•]|\d+[.)])\s+/, ""));
+      const L = ordered ? "ol" : "ul";
+      blocks.push(<L key={k++}>{items.map((it, j) => <li key={j}>{inline(it, j)}</li>)}</L>);
+      continue;
+    }
+    if (/^>\s?/.test(line)) {
+      const q: string[] = [];
+      while (i < lines.length && /^>\s?/.test(lines[i])) q.push(lines[i++].replace(/^>\s?/, ""));
+      blocks.push(<blockquote key={k++}>{inline(q.join(" "), k)}</blockquote>);
+      continue;
+    }
+    if (!line.trim()) { i++; continue; }
+    const para: string[] = [];
+    while (i < lines.length && lines[i].trim() && !/^\s*```|^#{1,3}\s|^\s*([-*•]|\d+[.)])\s+|^>/.test(lines[i])) para.push(lines[i++]);
+    blocks.push(<p key={k++}>{inline(para.join("\n"), k)}</p>);
+  }
+  return <div className="chat-md selectable">{blocks}</div>;
+}
