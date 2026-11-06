@@ -8,6 +8,11 @@
 - Auto-approve no longer asks about everyday commands that hide errors with `2>/dev/null` or write to temporary folders. Writing into system paths still asks.
 - Auto-approve now also applies to Claude Code and Codex agents.
 
+### Menu bar
+
+- The menu bar item uses the Atlas logo, with a dot while Atlas works, a ring when something needs you and a tick when a run finishes, plus a count of pending items.
+- The menu has a status header, a "Needs you" section with Allow / Always allow / Deny, quick actions (New Chat, Ask Atlas in the Island, Projects, Open Atlas) with shortcuts, and the Dynamic Island switches.
+
 ### Previews
 
 - Runs show the images and 3D models an agent creates or changes, right in the chat, including files made by commands such as Blender exports.
