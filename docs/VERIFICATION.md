@@ -1,4 +1,16 @@
-# Verification report — 2026-11-04
+# Verification
+
+## Current source checks — 2026-11-05
+
+- **52 backend checks pass** on Python 3.9 with the pinned dependencies, with no warnings in the final run.
+- The desktop TypeScript check and production UI build pass.
+- The macOS app bundle builds, imports its backend, and installs successfully.
+- Demo browser checks cover automatic startup, reduced motion, persistent sidebar collapse, model selection, personalization save ordering, and recovery from corrupted saved navigation.
+- Public screenshots use an isolated database with fictional teams and a demo profile. Home-folder paths are abbreviated.
+
+These checks do not establish compatibility with every external provider or model. No paid inference was used in this pass. The live-model observations below are historical results from an earlier source revision.
+
+## Historical verification report — 2026-11-04
 
 Environment: Apple Silicon Mac, macOS, Python 3.9 (Command Line Tools), standard (non-admin) user.
 Models used: `qwen2.5-coder:7b` (Q4_K_M) on Ollama 0.40.14, installed by ATLAS into its own data folder;

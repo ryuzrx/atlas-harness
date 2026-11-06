@@ -1,5 +1,29 @@
 # Release notes
 
+## Unreleased
+
+### Interface
+
+- A collapsible icon sidebar with persistent state and profile access in either layout.
+- Personalized setup with name, photo, workspace label, and welcome-greeting controls.
+- An animated launch sequence that opens the workspace automatically, with an Appearance setting and reduced-motion support.
+- Refreshed model, team, agent, and profile management, with clearer spacing and theme contrast.
+- A chat model picker with provider groups, descriptions, selected states, and exact model IDs.
+- Codex model discovery from its local catalog; only selectable model metadata is exposed.
+
+### Reliability
+
+- Fixed team suggestion errors and automatic model assignment during team creation.
+- Cancelled obsolete page requests so late responses cannot overwrite newer results.
+- Recover safely from invalid saved navigation state.
+- Shut down background health checks and download tasks cleanly, including CLI subprocess cleanup.
+
+### Repository
+
+- Updated documentation and screenshots using fictional demo data.
+- Excluded local plans, browser recordings, and database files from version control.
+
+
 ## 0.3.2 — 2026-11-05 (chat attachments and team routing)
 
 ### New

@@ -39,11 +39,13 @@ DEFAULT_SETTINGS = {
     "appearance.palette": "atlas",
     "appearance.custom_palettes": [],
     "profile.name": "",
+    "profile.personalized_greeting": True,
     "profile.avatar": "",      # small square image (data URL), stored on this Mac only
     "profile.workspace": "",  # label shown under your name
     "onboarding.completed": False,
     "legal.acknowledged": "",  # version of the usage notice the user acknowledged
     "general.reduce_motion": False,
+    "general.launch_animation": True,
     "general.ui_scale": 1.0,       # 0.9 | 1.0 | 1.1 | 1.2 (interface size)
     "chat.width": "normal",        # normal | wide
     "chat.send_key": "enter",      # enter | mod_enter

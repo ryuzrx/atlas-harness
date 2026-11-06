@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import "./motion.css";
 import { App } from "./App";
 import { StoreProvider } from "./store";
 import { ToastProvider } from "./components/ui";

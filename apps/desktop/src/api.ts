@@ -63,8 +63,9 @@ export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-export async function api<T = any>(path: string, opts: { method?: string; body?: any } = {}): Promise<T> {
+export async function api<T = any>(path: string, opts: { method?: string; body?: any; signal?: AbortSignal } = {}): Promise<T> {
   const res = await fetch(`/api${path}`, {
+    signal: opts.signal,
     method: opts.method || (opts.body !== undefined ? "POST" : "GET"),
     headers: { "x-atlas-token": TOKEN, ...(opts.body !== undefined ? { "content-type": "application/json" } : {}) },
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
@@ -109,19 +110,34 @@ export function useApi<T = any>(path: string | null, entities: string[] = [], po
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const timer = useRef<number | undefined>(undefined);
+  const request = useRef<AbortController | null>(null);
   const load = useCallback(async () => {
-    if (!path) return;
-    try { setData(await api<T>(path)); setError(null); } catch (e: any) { setError(e.message); } finally { setLoading(false); }
+    request.current?.abort();
+    if (!path) { setData(undefined); setError(null); setLoading(false); return; }
+    const controller = new AbortController();
+    request.current = controller;
+    try {
+      const result = await api<T>(path, { signal: controller.signal });
+      if (!controller.signal.aborted) { setData(result); setError(null); }
+    } catch (e: any) {
+      if (!controller.signal.aborted) setError(e.message);
+    } finally {
+      if (!controller.signal.aborted) setLoading(false);
+    }
   }, [path]);
-  useEffect(() => { setLoading(true); load(); }, [load]);
+  useEffect(() => {
+    setLoading(true); load();
+    return () => { request.current?.abort(); window.clearTimeout(timer.current); };
+  }, [load]);
   useEffect(() => {
     if (!entities.length) return;
-    return subscribe((m) => {
+    const unsubscribe = subscribe((m) => {
       if (m.kind === "changed" && (m.entity === "*" || entities.includes(m.entity))) {
         window.clearTimeout(timer.current);
         timer.current = window.setTimeout(load, 120);
       }
     });
+    return () => { unsubscribe(); window.clearTimeout(timer.current); };
   }, [load, entities.join(",")]);
   useEffect(() => {
     if (!pollMs) return;

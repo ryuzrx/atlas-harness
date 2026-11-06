@@ -106,3 +106,18 @@ def test_team_suggestions_fall_back_when_model_discovery_fails(monkeypatch):
         assert response.status_code == 200
         assert response.json()["source"] == "keywords"
         assert "qa" in response.json()["teams"]
+
+
+def test_shutdown_waits_for_background_health_check(monkeypatch):
+    import asyncio
+    from atlas.providers import ModelRouter
+    stopped = []
+    async def health(self):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.append(True)
+    monkeypatch.setattr(ModelRouter, "health_all", health)
+    with TestClient(create_app("team-management-test")) as client:
+        assert client.get("/api/teams", headers=HEADERS).status_code == 200
+    assert stopped == [True]

@@ -6,6 +6,9 @@ import Cocoa
 import WebKit
 import UserNotifications
 import Security
+import ImageIO
+import UniformTypeIdentifiers
+import CoreGraphics
 
 final class DragWebView: WKWebView {
     var lastMouseDown: NSEvent?
@@ -92,7 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         webView.navigationDelegate = self
         webView.uiDelegate = self
         effect.addSubview(webView)
-        webView.loadHTMLString(statusPage("Starting Atlas…", detail: "Launching the local backend."), baseURL: nil)
+        webView.loadHTMLString(statusPage("Starting Atlas…", detail: "Preparing your workspace."), baseURL: nil)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -100,11 +103,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     func statusPage(_ title: String, detail: String, error: Bool = false) -> String {
         let esc = { (s: String) in s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;") }
         return """
-        <html><head><meta name="color-scheme" content="light dark"><style>
-        body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;font:13px -apple-system;color:\(error ? "#c4554d" : "#717782");background:transparent}
-        .b{text-align:center;max-width:560px;padding:24px} h1{font-size:15px;font-weight:600;color:CanvasText;margin:0 0 6px}
-        pre{white-space:pre-wrap;text-align:left;font:11px ui-monospace;opacity:.8;max-height:300px;overflow:auto}
-        </style></head><body><div class="b"><h1>\(esc(title))</h1><pre>\(esc(detail))</pre></div></body></html>
+        <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><style>
+        :root{color-scheme:dark light;--base:#0c0c0c;--surface:#161616;--text:#f5f5f7;--muted:#a1a1a6;--line:#2a2a2a}
+        @media(prefers-color-scheme:light){:root{--base:#fafafa;--surface:#fff;--text:#1d1d1f;--muted:#6e6e73;--line:#e5e5e5}}
+        *{box-sizing:border-box}body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;font:14px "Avenir Next",-apple-system,sans-serif;color:var(--text);background:var(--base)}
+        .b{text-align:center;max-width:560px;padding:32px;animation:enter .45s cubic-bezier(.22,1,.36,1)}.mark{width:88px;height:88px;margin:auto;display:grid;place-items:center;border:1px solid var(--line);border-radius:24px;background:var(--surface)}svg{width:44px;height:31px;fill:currentColor}
+        h1{font-size:28px;font-weight:600;letter-spacing:-1px;margin:24px 0 8px}p{font-size:14px;color:var(--muted);margin:0}pre{white-space:pre-wrap;text-align:left;font:12px ui-monospace;max-height:300px;overflow:auto;color:#df746c;margin-top:20px}
+        .track{height:3px;width:120px;margin:28px auto 0;border-radius:9px;background:var(--line);overflow:hidden}.track span{display:block;height:100%;width:45%;border-radius:inherit;background:var(--muted);animation:travel 1.4s cubic-bezier(.4,0,.2,1) infinite}
+        @keyframes travel{from{transform:translateX(-120%)}to{transform:translateX(340%)}}@keyframes enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+        @media(prefers-reduced-motion:reduce){*{animation:none!important}.track span{width:100%;opacity:.6}}
+        </style></head><body><div class="b"><div class="mark"><svg viewBox="0 0 40 28" aria-hidden="true"><path d="M0 28 L13 0 H21 L8 28 Z"/><path d="M23.6 5.2 L39 28 H29.6 L19.9 13.2 Z"/></svg></div><h1>\(error ? esc(title) : "Atlas")</h1>
+        \(error ? "<pre>" + esc(detail) + "</pre>" : "<p role=\"status\">" + esc(detail) + "</p><div class=\"track\" aria-hidden=\"true\"><span></span></div>")
+        </div></body></html>
         """
     }
 
@@ -209,6 +219,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             panel.message = body["message"] as? String ?? "Choose a project folder. Agents can only access folders you add."
             panel.beginSheetModal(for: window) { resp in
                 self.reply(id, resp == .OK ? panel.url?.path : nil)
+            }
+        case "pickImage":
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = false
+            panel.canChooseFiles = true
+            panel.allowsMultipleSelection = false
+            panel.allowedContentTypes = [.image]
+            panel.prompt = "Choose Image"
+            panel.beginSheetModal(for: window) { response in
+                guard response == .OK, let url = panel.url else { self.reply(id, nil); return }
+                let source = CGImageSourceCreateWithURL(url as CFURL, nil)
+                var decoded = source.flatMap { CGImageSourceCreateThumbnailAtIndex($0, 0, [
+                        kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceThumbnailMaxPixelSize: 192,
+                      ] as CFDictionary) }
+                if decoded == nil, let image = NSImage(contentsOf: url) {
+                    var rect = CGRect(origin: .zero, size: image.size)
+                    decoded = image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+                }
+                guard let thumbnail = decoded else {
+                    self.reply(id, ["error": "Could not read that image. Try exporting it as PNG or JPEG."])
+                    return
+                }
+                guard let context = CGContext(data: nil, width: 192, height: 192, bitsPerComponent: 8, bytesPerRow: 0,
+                                              space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+                    self.reply(id, ["error": "Could not process that image."])
+                    return
+                }
+                let side = min(thumbnail.width, thumbnail.height)
+                let crop = CGRect(x: (thumbnail.width - side) / 2, y: (thumbnail.height - side) / 2, width: side, height: side)
+                guard let square = thumbnail.cropping(to: crop) else { self.reply(id, ["error": "Could not crop that image."]); return }
+                context.interpolationQuality = .high
+                context.draw(square, in: CGRect(x: 0, y: 0, width: 192, height: 192))
+                guard let image = context.makeImage() else { self.reply(id, ["error": "Could not process that image."]); return }
+                let data = NSMutableData()
+                guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else {
+                    self.reply(id, ["error": "Could not save the profile image."])
+                    return
+                }
+                CGImageDestinationAddImage(destination, image, nil)
+                guard CGImageDestinationFinalize(destination) else { self.reply(id, ["error": "Could not save the profile image."]); return }
+                self.reply(id, "data:image/png;base64,\(data.base64EncodedString())")
             }
         case "notify":
             let c = UNMutableNotificationContent()

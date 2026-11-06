@@ -130,6 +130,8 @@ export function Settings() {
             <Row label="Interface size" hint="Scales the whole app.">
               <Select className="!w-40" value={String(settings["general.ui_scale"] ?? 1)} onChange={(e) => set("general.ui_scale")(+e.target.value)}>
                 <option value="0.9">Small (90%)</option><option value="1">Default</option><option value="1.1">Large (110%)</option><option value="1.2">Larger (120%)</option></Select></Row>
+            <Row label="Personalized greeting" hint="Use your display name in the launch animation.">{tog("profile.personalized_greeting")}</Row>
+            <Row label="Launch animation" hint="Play the Atlas welcome animation when the app opens.">{tog("general.launch_animation")}</Row>
             <Row label="Reduce motion" hint="Also respects the macOS Reduce Motion accessibility setting.">{tog("general.reduce_motion")}</Row>
           </>}
           {section === "Chat" && <>

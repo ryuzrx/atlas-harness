@@ -33,7 +33,10 @@ export function ModelFolder({ variant = "card", disabled = false, onChanged, cla
   };
 
   if (!status) return null;
-  const path = status.model_dir || status.default_model_dir;
+  const rawPath = String(status.model_dir || status.default_model_dir || "");
+  const defaultPath = String(status.default_model_dir || "");
+  const home = defaultPath.endsWith("/.ollama/models") ? defaultPath.slice(0, -"/.ollama/models".length) : "";
+  const path = home && rawPath.startsWith(home + "/") ? "~" + rawPath.slice(home.length) : rawPath;
   return (
     <div className={cx(
       "flex items-center gap-3",

@@ -5,10 +5,10 @@ import { matches, useStore } from "./store";
 import { Sidebar } from "./components/Sidebar";
 import { Inspector } from "./components/Inspector";
 import { CommandPalette, NewTaskModal } from "./components/Dialogs";
-import { cx, Spinner } from "./components/ui";
+import { cx } from "./components/ui";
 import { Chat } from "./views/Chat";
 import { LEGAL_VERSION, Welcome } from "./components/Welcome";
-import { Splash } from "./components/AnimatedMark";
+import { Splash, ViewLoading } from "./components/LoadingScreen";
 import { ModelDownloads } from "./components/ModelDownloads";
 
 const Teams = lazy(() => import("./views/Teams").then((m) => ({ default: m.Teams })));
@@ -25,7 +25,7 @@ export function App() {
   const store = useStore();
   const { route, go, settings } = store;
   const connected = useConnected();
-  const [splash, setSplash] = useState(true);
+  const [splash, setSplash] = useState(() => !localStorage.getItem("atlas_welcome_seen") || localStorage.getItem("atlas_launch_animation") !== "0");
   const { data: meta } = useApi<any>("/meta", ["settings"]);
   const { data: approvals = [] } = useApi<any[]>("/approvals", ["approval", "task"]);
 
@@ -69,11 +69,12 @@ export function App() {
   const isChat = route.name === "chat" || route.name === "overview";
   return (
     <div className="h-full flex overflow-hidden bg-[var(--base)]">
+      <div className="contents" inert={splash}>
       <Sidebar pending={approvals.length} user={meta?.user} />
       <main className="relative flex-1 min-w-0 h-full flex">
         {isChat ? <Chat /> : (
           <div className="relative flex-1 min-w-0 h-full flex flex-col">
-            <header className="drag h-[64px] shrink-0 flex items-center gap-3 px-10 pt-2">
+            <header className="drag h-[68px] shrink-0 flex items-center gap-3 px-10 pt-2">
               {sections && (
                 <div role="tablist" className="no-drag flex items-center gap-1 p-1 rounded-md border border-line">
                   {sections.map((x) => (
@@ -89,8 +90,8 @@ export function App() {
                   <span className="h-1.5 w-1.5 rounded-full bg-warn" />{approvals.length} awaiting approval</button>
               )}
             </header>
-            <div className="flex-1 overflow-y-auto px-10 max-[760px]:px-5 pb-12 pt-4" key={route.name + (route.id || "")}>
-              <div className={cx("fade-in", route.name === "projects" && !route.id && "h-full")}><Suspense fallback={<div className="flex justify-center py-20"><Spinner /></div>}>{view}</Suspense></div>
+            <div className="flex-1 overflow-y-auto px-10 max-[760px]:px-6 pb-12 pt-6" key={route.name + (route.id || "")}>
+              <div className={cx("fade-in", route.name === "projects" && !route.id && "h-full")}><Suspense fallback={<ViewLoading />}>{view}</Suspense></div>
             </div>
           </div>
         )}
@@ -105,7 +106,8 @@ export function App() {
       <NewTaskModal />
       <CommandPalette />
       {settings && (!settings["onboarding.completed"] || settings["legal.acknowledged"] !== LEGAL_VERSION) && <Welcome />}
-      {splash && <Splash onFinish={() => setSplash(false)} />}
+      </div>
+      {splash && <Splash ready={Boolean(settings && meta)} onFinish={() => setSplash(false)} />}
     </div>
   );
 }

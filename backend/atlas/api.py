@@ -71,12 +71,19 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
         S.pull_tasks = {}
         S.active_pulls = {}
         S.chat.recover()
-        asyncio.ensure_future(S.router.health_all())
-        yield
-        await S.chat.stop_all()
-        await S.orch.stop()
-        await S.mcp.shutdown()
-        S.router.stop_ollama()
+        health_task = asyncio.ensure_future(S.router.health_all())
+        try:
+            yield
+        finally:
+            health_task.cancel()
+            await asyncio.gather(health_task, return_exceptions=True)
+            for task in S.pull_tasks.values():
+                task.cancel()
+            await asyncio.gather(*S.pull_tasks.values(), return_exceptions=True)
+            await S.chat.stop_all()
+            await S.orch.stop()
+            await S.mcp.shutdown()
+            S.router.stop_ollama()
 
     app = FastAPI(title="ATLAS Harness", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None)
 

@@ -6,22 +6,22 @@
    Near-monochrome: blue is reserved for links, focus, active navigation and a faint user-bubble tint.
    Depth comes from layered greys + hairline borders + soft drop shadows, not glow. */
 :root {
-  --base: #f5f5f7;
+  --base: #f4f5f7;
   --bg: var(--base);
   --surface: #ffffff;
   --surface-2: #fbfcfd;
   --sunken: #eef1f4;
   --control: #ffffff;
   --glass: #ffffff;
-  --sidebar: #f4f6f8;
+  --sidebar: #f0f2f5;
   --text: #101318;
   --text-2: #6f7783;
   --text-3: #9298a2;
   --border: #e3e7ed;
   --border-strong: #c8ced8;
-  --hover: #f1f3f5;
-  --active: #eaedf1;
-  --selected: #eff1f4;
+  --hover: #edf0f4;
+  --active: #e7ebf1;
+  --selected: rgba(63, 106, 168, 0.085);
   --accent: #3f6aa8;
   --accent-2: #3f6aa8;
   --accent-bg: rgba(63, 106, 168, 0.07);
@@ -50,21 +50,21 @@
 }
 
 [data-theme="dark"] {
-  --base: #0c0c0d;          /* app canvas */
-  --sidebar: #0e0f12;      /* chrome */
-  --surface: #131418;       /* panels */
-  --surface-2: #131418;
-  --control: #131418;       /* buttons, chips */
-  --sunken: #090a0c;        /* inputs, tracks */
-  --glass: #131418;
+  --base: #101216;          /* app canvas */
+  --sidebar: #12151a;      /* chrome */
+  --surface: #181b21;       /* panels */
+  --surface-2: #181b21;
+  --control: #181b21;       /* buttons, chips */
+  --sunken: #101216;        /* inputs, tracks */
+  --glass: #181b21;
   --text: #f2f4f7;
   --text-2: #9aa0a8;
   --text-3: #6b7079;
-  --border: #24262c;
-  --border-strong: #3b3e46;
-  --hover: #1a1b20;
-  --active: #202228;
-  --selected: #1c1d23;
+  --border: #292d35;
+  --border-strong: #414753;
+  --hover: #20242c;
+  --active: #272c35;
+  --selected: rgba(127, 162, 214, 0.12);
   --accent: #7fa2d6;
   --accent-2: #7fa2d6;
   --accent-bg: rgba(127, 162, 214, 0.10);
@@ -126,14 +126,14 @@
   --radius-md: 9px;
   --radius-lg: 12px;
   --radius-xl: 16px;
-  --text-2xs: 11px;   --text-2xs--line-height: 15px;
-  --text-xs: 12px;    --text-xs--line-height: 17px;
-  --text-sm: 13px;    --text-sm--line-height: 19px;
-  --text-base: 14px;  --text-base--line-height: 20px;
-  --text-lg: 16px;    --text-lg--line-height: 22px;   --text-lg--letter-spacing: -0.01em;
+  --text-2xs: 12px;   --text-2xs--line-height: 16px;
+  --text-xs: 13px;    --text-xs--line-height: 18px;
+  --text-sm: 14px;    --text-sm--line-height: 20px;
+  --text-base: 15px;  --text-base--line-height: 21px;
+  --text-lg: 17px;    --text-lg--line-height: 23px;   --text-lg--letter-spacing: -0.01em;
   --text-xl: 20px;    --text-xl--line-height: 26px;   --text-xl--letter-spacing: -0.015em;
   --text-2xl: 26px;   --text-2xl--line-height: 32px;  --text-2xl--letter-spacing: -0.02em;
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", sans-serif;
+  --font-sans: "Avenir Next", "Avenir", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
 }
 
@@ -153,7 +153,7 @@ body {
   background: transparent;
   color: var(--text);
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   user-select: none;
@@ -225,6 +225,11 @@ table thead th { font-weight: 500; font-size: 11.5px; }
 .chat-md li { margin: 2px 0; }
 .chat-md a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 .chat-md code { font-family: var(--font-mono); font-size: 12.5px; background: var(--hover); border: 1px solid var(--border); padding: 0 4px; border-radius: 5px; }
+.chat-model-attribution { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 1px 0; margin-bottom: -4px; }
+.chat-model-name { color: var(--text); font-size: 14px; font-weight: 550; line-height: 19px; letter-spacing: -0.012em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-model-provider { color: var(--text-2); font-size: 12px; line-height: 16px; }
+.chat-model-status { flex: 0 0 auto; border: 1px solid var(--border); border-radius: 999px; background: var(--active); color: var(--text-2); padding: 2px 8px; font-size: 11px; font-weight: 550; line-height: 16px; animation: model-status-in 180ms var(--ease) both; }
+@keyframes model-status-in { from { opacity: 0; transform: translateY(2px) scale(0.98); } to { opacity: 1; transform: none; } }
 .chat-md pre { margin: 0 0 12px; background: #0a0a0a; border: 1px solid var(--border); border-radius: 16px; overflow: auto; }
 :root:not([data-theme="dark"]) .chat-md pre { background: var(--sunken); }
 .chat-md pre code { display: block; padding: 12px 14px; background: none; border: 0; font-size: 12.5px; line-height: 1.55; white-space: pre; }

@@ -29,8 +29,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [route, setRoute] = useState<Route>(() => {
     const deep = parseHash();
     if (deep) return deep.name === "settings" ? { name: "chat" } : deep;
-    const r: Route = JSON.parse(localStorage.getItem("atlas_route") || '{"name":"chat"}');
-    return r.name === "overview" || r.name === "settings" ? { name: "chat" } : r;
+    try {
+      const r = JSON.parse(localStorage.getItem("atlas_route") || '{"name":"chat"}');
+      if (!r || !ROUTES.includes(r.name) || (r.id !== undefined && typeof r.id !== "string")) return { name: "chat" };
+      return r.name === "overview" || r.name === "settings" ? { name: "chat" } : r;
+    } catch {
+      return { name: "chat" };
+    }
   });
   // keep the URL in sync so any screen can be linked to (#/chat/<id>, #/models, ...)
   useEffect(() => {
@@ -76,8 +81,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const r: Route = r0.name === "overview" ? { name: "chat" } : r0; setHistory((h) => [...h.slice(-20), route]); setRoute(r); select(null); localStorage.setItem("atlas_route", JSON.stringify(r)); };
   const back = () => setHistory((h) => { const prev = h[h.length - 1]; if (prev) setRoute(prev); return h.slice(0, -1); });
   const toggleSidebar = () => setCollapsed((c) => { localStorage.setItem("atlas_sidebar", c ? "0" : "1"); return !c; });
-  const saveSettings = async (patch: Record<string, any>) => { setData(await api("/settings", { method: "PUT", body: patch })); };
+  const settingsQueue = useRef<Promise<void>>(Promise.resolve());
+  const saveSettings = (patch: Record<string, any>): Promise<void> => {
+    const next = settingsQueue.current.catch(() => {}).then(async () => {
+      setData(await api("/settings", { method: "PUT", body: patch }));
+    });
+    settingsQueue.current = next;
+    return next;
+  };
   const setActiveWorkspace = (w: string) => { setWS(w); localStorage.setItem("atlas_ws", w); };
+
+  useEffect(() => {
+    if (settings) localStorage.setItem("atlas_launch_animation", settings["general.launch_animation"] === false ? "0" : "1");
+  }, [settings?.["general.launch_animation"]]);
 
   // theme + motion
   useEffect(() => {

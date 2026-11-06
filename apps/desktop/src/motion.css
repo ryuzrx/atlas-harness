@@ -1,0 +1,95 @@
+/* Shared motion language: direct feedback, quiet entrances, no persistent transforms on page containers. */
+:root { --ease: cubic-bezier(.22, 1, .36, 1); --spring: cubic-bezier(.22, 1, .36, 1); --dur-fast: 120ms; --dur: 200ms; --dur-slow: 280ms; }
+.atlas-sidebar { width: 248px; position: relative; z-index: 40; transition: width 280ms var(--ease); }
+.atlas-sidebar[data-collapsed="true"] { width: 76px; }
+.sidebar-label { animation: sidebar-label-in 180ms var(--ease); }
+.sidebar-nav-item { transition: background-color 150ms ease, color 150ms ease; }
+.sidebar-toggle svg { animation: control-in 180ms var(--ease); }
+.sidebar-nav-item:active:not(:disabled), .sidebar-toggle:active { transform: scale(.96); }
+.sidebar-nav-item, .sidebar-toggle { transition: background-color 150ms ease, color 150ms ease, transform 120ms var(--ease); }
+@keyframes sidebar-label-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes control-in { from { opacity: .5; transform: scale(.88); } to { opacity: 1; transform: none; } }
+.fade-in { animation: page-enter 220ms var(--ease); }
+@keyframes page-enter { from { opacity: 0; } to { opacity: 1; } }
+.anim-rise { animation: content-enter 240ms var(--ease); }
+.stagger > * { animation: content-enter 240ms var(--ease); }
+@keyframes content-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.pop-in, .anim-pop { animation: surface-enter 180ms var(--ease); }
+@keyframes surface-enter { from { opacity: 0; transform: translateY(4px) scale(.985); } to { opacity: 1; transform: none; } }
+.modal-backdrop { animation: page-enter 180ms ease; }
+.modal-panel { animation: modal-enter 240ms var(--ease); }
+@keyframes modal-enter { from { opacity: 0; transform: translateY(12px) scale(.985); } to { opacity: 1; transform: none; } }
+.disclose { transition: grid-template-rows 240ms var(--ease), opacity 180ms ease; }
+.lift { transition: border-color 150ms ease, background-color 150ms ease; }
+.am-play .am-left, .am-play .am-right { will-change: auto; }
+.am-quick .am-left, .am-cinematic .am-left { animation: mark-left 480ms var(--ease) both; }
+.am-quick .am-right, .am-cinematic .am-right { animation: mark-right 480ms var(--ease) 60ms both; }
+@keyframes mark-left { from { opacity: 0; transform: translate(-5px, 3px); } to { opacity: 1; transform: none; } }
+@keyframes mark-right { from { opacity: 0; transform: translate(5px, 3px); } to { opacity: 1; transform: none; } }
+.am-thinking-left, .am-thinking-right { animation: mark-thinking 1600ms ease-in-out infinite; }
+.am-thinking-right { animation-delay: 240ms; }
+@keyframes mark-thinking { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+.atlas-launch { opacity: 1; transition: opacity 200ms ease; }
+.atlas-launch-leave { opacity: 0; pointer-events: none; }
+.atlas-launch-content { animation: launch-enter 500ms var(--ease); }
+.atlas-launch-mark { width: 88px; height: 88px; border-radius: 24px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-md); }
+@keyframes launch-enter { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+.atlas-loading-track { width: 120px; height: 3px; overflow: hidden; border-radius: 999px; background: var(--active); }
+.atlas-loading-track > span { display: block; width: 45%; height: 100%; background: var(--text-2); border-radius: inherit; animation: loading-travel 1400ms cubic-bezier(.4,0,.2,1) infinite; }
+@keyframes loading-travel { from { transform: translateX(-120%); } to { transform: translateX(340%); } }
+.atlas-view-loading { animation: page-enter 240ms ease; }
+.atlas-skeleton { border-radius: 10px; background: var(--active); animation: skeleton-breathe 1600ms ease-in-out infinite; }
+@keyframes skeleton-breathe { 0%, 100% { opacity: .5; } 50% { opacity: .9; } }
+.chat-model-option { width: 100%; display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 10px; text-align: left; border: 1px solid transparent; color: var(--text); }
+.chat-model-option:hover { background: var(--hover); }
+.chat-model-option[aria-checked="true"] { border-color: var(--border-strong); background: var(--selected); }
+.chat-model-option .model-option-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.chat-model-option .model-option-detail { font-size: 12px; line-height: 18px; color: var(--text-2); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  .atlas-loading-track > span { width: 100%; opacity: .6; transform: none; }
+}
+.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+.reduce-motion .atlas-loading-track > span { width: 100%; opacity: .6; transform: none; }
+/* Welcome sequence: assemble, orbit, reveal, then open the workspace. */
+.atlas-launch { transition: none; }
+.atlas-launch-content { animation: none; }
+.atlas-launch-emblem { position: relative; width: 104px; height: 104px; perspective: 650px; animation: welcome-position 1600ms cubic-bezier(.2,.8,.2,1) both; }
+.atlas-launch-float { width: 100%; height: 100%; animation: welcome-float 5s ease-in-out 2100ms infinite; }
+.atlas-launch-mark { position: relative; width: 104px; height: 104px; border-radius: 29px; overflow: hidden; transform-style: preserve-3d; animation: welcome-tile 1250ms cubic-bezier(.16,1,.3,1) both; }
+.atlas-launch-mark svg { position: relative; z-index: 1; overflow: visible; }
+.atlas-launch-mark svg path:first-child { transform-origin: 10px 14px; animation: welcome-stroke-left 1100ms cubic-bezier(.16,1,.3,1) 260ms both; }
+.atlas-launch-mark svg path:last-child { transform-origin: 28px 14px; animation: welcome-stroke-right 1100ms cubic-bezier(.16,1,.3,1) 380ms both; }
+.atlas-launch-sheen { position: absolute; inset: -60%; background: linear-gradient(115deg, transparent 38%, rgba(170,170,170,.15) 49%, rgba(255,255,255,.35) 50%, transparent 62%); transform: translateX(-80%) rotate(-15deg); animation: welcome-sheen 6s ease-in-out 900ms infinite; pointer-events: none; }
+.atlas-launch-orbits { position: absolute; width: 200px; height: 200px; left: -48px; top: -48px; animation: welcome-orbit-life 2100ms ease both; pointer-events: none; }
+.atlas-launch-orbits svg { width: 100%; height: 100%; overflow: visible; }
+.atlas-launch-orbits circle { stroke: var(--text-3); stroke-width: .7; transform-origin: 100px 100px; }
+.atlas-orbit-outer { stroke-dasharray: 160 400; animation: welcome-orbit-outer 1800ms cubic-bezier(.25,.1,.15,1) both; }
+.atlas-orbit-inner { stroke-dasharray: 70 385; animation: welcome-orbit-inner 1800ms cubic-bezier(.25,.1,.15,1) both; }
+.atlas-launch-ripple { position: absolute; inset: -10px; border: 1px solid var(--border-strong); border-radius: 38px; animation: welcome-ripple 1100ms ease-out 700ms both; pointer-events: none; }
+.atlas-launch-title { animation: none; }
+.atlas-title-mask { display: inline-block; overflow: hidden; vertical-align: bottom; padding-bottom: .1em; }
+.atlas-title-mask > span { display: inline-block; animation: welcome-word 800ms cubic-bezier(.16,1,.3,1) both; }
+.atlas-launch-subtitle { animation: welcome-detail 750ms var(--ease) 1280ms both; }
+.atlas-launch-leave { opacity: 1; pointer-events: none; animation: welcome-open 620ms cubic-bezier(.65,0,.25,1) both; }
+.atlas-launch-leave .atlas-launch-content { animation: welcome-content-exit 350ms ease both; }
+@keyframes welcome-position { 0%, 30% { transform: translateY(68px) scale(1.08); } 100% { transform: none; } }
+@keyframes welcome-tile { 0% { opacity: 0; transform: translateY(24px) rotateX(55deg) rotateZ(-24deg) scale(.62); } 55% { opacity: 1; } 78% { transform: rotateX(-4deg) rotateZ(2deg) scale(1.03); } 100% { opacity: 1; transform: none; } }
+@keyframes welcome-stroke-left { from { opacity: 0; transform: translate(-26px,9px) rotate(-16deg); } to { opacity: 1; transform: none; } }
+@keyframes welcome-stroke-right { from { opacity: 0; transform: translate(26px,-9px) rotate(16deg); } to { opacity: 1; transform: none; } }
+@keyframes welcome-orbit-life { 0% { opacity: 0; transform: scale(.65); } 25% { opacity: .65; } 65% { opacity: .4; } 100% { opacity: 0; transform: scale(1.24); } }
+@keyframes welcome-orbit-outer { from { transform: rotate(-170deg); stroke-dashoffset: 260; } to { transform: rotate(140deg); stroke-dashoffset: -180; } }
+@keyframes welcome-orbit-inner { from { transform: rotate(160deg); stroke-dashoffset: 90; } to { transform: rotate(-160deg); stroke-dashoffset: -120; } }
+@keyframes welcome-ripple { from { opacity: .65; transform: scale(.85); } to { opacity: 0; transform: scale(1.7); } }
+@keyframes welcome-word { from { opacity: 0; transform: translateY(110%) rotate(3deg); } to { opacity: 1; transform: none; } }
+@keyframes welcome-detail { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes welcome-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes welcome-sheen { 0% { transform: translateX(-80%) rotate(-15deg); opacity: 0; } 8% { opacity: 1; } 28% { transform: translateX(80%) rotate(-15deg); opacity: 0; } 100% { transform: translateX(80%) rotate(-15deg); opacity: 0; } }
+@keyframes welcome-open { from { clip-path: circle(110% at 50% 46%); } to { clip-path: circle(0% at 50% 46%); } }
+@keyframes welcome-content-exit { to { opacity: 0; transform: translateY(-12px) scale(1.06); } }
+@media (prefers-reduced-motion: reduce) {
+  .atlas-launch-orbits, .atlas-launch-ripple, .atlas-launch-sheen { display: none; }
+}
+.reduce-motion .atlas-launch-orbits, .reduce-motion .atlas-launch-ripple, .reduce-motion .atlas-launch-sheen { display: none; }
+.atlas-launch-title { max-width: min(90vw, 720px); }
+.atlas-title-mask, .atlas-title-mask > span { max-width: 100%; overflow-wrap: anywhere; }

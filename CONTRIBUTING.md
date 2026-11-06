@@ -1,6 +1,6 @@
-# Contributing to Atlas Harness
+# Contributing to Atlas
 
-Thanks for helping. Atlas Harness is a local-first macOS app (Swift shell + React UI + Python backend).
+Thanks for helping. Atlas is a local-first macOS app (Swift shell + React UI + Python backend).
 
 ## Ground rules
 
@@ -39,6 +39,12 @@ Most providers are OpenAI-compatible. Add a preset to `backend/atlas/providers/c
 - `tests/test_providers.py` checks the catalog for consistency.
 
 For providers with a different protocol, add an adapter next to `providers/anthropic.py`.
+
+## Public content and screenshots
+
+Use fictional names, demo workspaces, and isolated data when capturing screenshots. Never commit real conversations, account details, local home paths, API keys, databases, or internal planning notes. Keep commit subjects focused on product behavior.
+
+Before publishing, inspect the staged diff and author metadata. The ignore rules help keep local artifacts out of commits; they do not replace reviewing the files you publish.
 
 ## Commit messages
 

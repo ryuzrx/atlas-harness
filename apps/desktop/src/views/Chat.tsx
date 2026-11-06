@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { Agent, api, Approval, Model, Project, Provider, subscribe, Task, Team, useApi } from "../api";
 import { BrandMark, brandFor } from "../components/Brand";
+import { ChatModelPicker } from "../components/ChatModelPicker";
 import { SessionPanel } from "../components/SessionPanel";
 import { ProviderIcon, resolveProviderIconKey } from "../components/Endpoints";
 import { useStore } from "../store";
@@ -138,64 +139,7 @@ function AgentMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => v
 }
 
 function ModelMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => void; h: ReturnType<typeof useHarnessData> }) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const { go } = useStore();
-  const mode = cfg.mode || "model";
-  const agent = h.agents.find((a) => a.id === cfg.agent_id);
-  const locked = mode !== "model";
-  const label = mode === "agent" ? (agent?.model || "Model") : mode === "team" ? "Team models" : (cfg.model || "Select model");
-  const statusOf = (pid: string) => h.providers.find((p) => p.id === pid)?.status || "unknown";
-  const selectedModel = h.models.find((m) => m.provider_id === cfg.provider_id && m.name === cfg.model);
-  const selectedProvider = h.providers.find((p) => p.id === cfg.provider_id);
-  const selectedIcon = resolveProviderIconKey({ presetId: selectedProvider?.config?.preset_id || selectedModel?.provider_preset_id, kind: selectedProvider?.kind || selectedModel?.provider_kind, baseUrl: selectedProvider?.base_url, name: selectedProvider?.name || selectedModel?.provider_name });
-  const groups = useMemo(() => {
-    const g: Record<string, { name: string; status: string; items: Model[]; provider?: Provider }> = {};
-    for (const m of h.models) {
-      if (!m.name) continue;
-      if (q && !m.name.toLowerCase().includes(q.toLowerCase())) continue;
-      const provider = h.providers.find((p) => p.id === m.provider_id);
-      (g[m.provider_id] ||= { name: provider?.name || m.provider_name, status: statusOf(m.provider_id), items: [], provider }).items.push(m);
-    }
-    return Object.entries(g);
-  }, [h.models, h.providers, q]);
-  const unavailable = h.providers.filter((p) => p.enabled && !h.models.some((m) => m.provider_id === p.id && m.name));
-  return (
-    <div className="relative">
-      <Chip iconBox icon={cfg.model ? <BrandMark model={cfg.model} fallbackIconKey={selectedIcon} label={selectedProvider?.name || selectedModel?.provider_name} size={24} /> : <Cpu size={15} strokeWidth={1.6} />} label={label} open={open} onClick={() => setOpen((o) => !o)} disabled={locked}
-        title={locked ? (mode === "agent" ? "This agent uses its own model. Change it on the Agents page." : "Each team agent uses its own model.") : label} />
-      <Popover open={open} onClose={() => setOpen(false)} width={380}>
-        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search models" aria-label="Search models"
-          className="w-full h-10 mb-2 px-3 rounded-md bg-hover border border-line text-base text-ink placeholder:text-ink-3 outline-none focus:border-line-strong" />
-        <div className="max-h-[360px] overflow-y-auto">
-        {h.modelsLoading && <div className="px-2.5 py-3 text-sm text-ink-3 flex items-center gap-2"><Loader2 size={13} className="animate-spin" />Loading models…</div>}
-        {!h.modelsLoading && groups.length === 0 && <div className="px-2.5 py-3 text-sm text-ink-3">{q ? "No models match." : "No models available. Connect a provider on the Models page."}</div>}
-        {groups.map(([pid, g]) => (
-          <div key={pid}>
-            <div className="flex items-center gap-2 px-2.5 pt-3 pb-1.5 text-xs text-ink-3">
-              <span className="truncate uppercase tracking-[0.06em] text-2xs">{g.name}</span>
-              <span className={cx("h-1.5 w-1.5 rounded-full", g.status === "connected" ? "bg-ok" : g.status === "failed" || g.status === "unavailable" ? "bg-bad" : "bg-ink-3")} />
-              <span className="ml-auto">{g.status === "connected" ? "Connected" : g.status === "failed" ? "Unavailable" : ""}</span>
-            </div>
-            {g.items.map((m) => (
-              <MenuRow key={pid + m.name} active={cfg.provider_id === pid && cfg.model === m.name}
-                onClick={() => { set({ provider_id: pid, model: m.name! }); setOpen(false); }}
-                hint={[m.details?.parameter_size, m.context_length ? `${Math.round(m.context_length / 1024)}k ctx` : null,
-                  m.capabilities?.tools === true ? "tools" : null, m.capabilities?.vision ? "vision" : null, m.state === "loaded" ? "loaded" : null].filter(Boolean).join(" · ") || undefined}>
-                <span className="flex items-center gap-2.5 min-w-0"><BrandMark model={m.name} fallbackIconKey={resolveProviderIconKey({ presetId: g.provider?.config?.preset_id, kind: g.provider?.kind || m.provider_kind, baseUrl: g.provider?.base_url, name: g.name })} label={g.name} size={26} /><span className="chat-menu-label truncate text-base">{m.name}</span></span>
-              </MenuRow>
-            ))}
-          </div>
-        ))}
-        {unavailable.length > 0 && !q && (
-          <div className="px-2.5 pt-2 pb-1 text-xs text-ink-3">{unavailable.map((p) => `${p.name} ${p.last_error ? "isn't running" : "has no models yet"}`).join(" · ")}.</div>
-        )}
-        </div>
-        <div className="h-px bg-line my-1.5" />
-        <MenuRow onClick={() => { setOpen(false); go({ name: "models" }); }}>Manage models…</MenuRow>
-      </Popover>
-    </div>
-  );
+  return <ChatModelPicker cfg={cfg} set={set} models={h.models} providers={h.providers} agents={h.agents} loading={h.modelsLoading} />;
 }
 
 function ToolsMenu({ cfg, set, h, groups }: { cfg: ChatConfig; set: (p: ChatConfig) => void; h: ReturnType<typeof useHarnessData>; groups: Record<string, string> }) {
@@ -467,7 +411,7 @@ function RunPanel({ taskId }: { taskId: string }) {
 }
 
 // ---------------------------------------------------------------- messages
-function MessageView({ m, live }: { m: ChatMessage; live?: string }) {
+function MessageView({ m, live, providers }: { m: ChatMessage; live?: string; providers: Provider[] }) {
   const [copied, setCopied] = useState(false);
   if (m.role === "user") {
     const files: { name: string }[] = m.data?.attachments || [];
@@ -484,18 +428,33 @@ function MessageView({ m, live }: { m: ChatMessage; live?: string }) {
   const streaming = m.status === "streaming";
   const text = streaming && live && live.length >= m.content.length ? live : m.content;
   const waiting = (streaming && !text) || (m.status === "running" && !m.content);
+  const modelProvider = m.data?.provider_id ? providers.find((p) => p.id === m.data.provider_id) : undefined;
+  const modelIcon = resolveProviderIconKey({
+    presetId: modelProvider?.config?.preset_id,
+    kind: modelProvider?.kind,
+    baseUrl: modelProvider?.base_url,
+    name: modelProvider?.name,
+  });
   return (
     <div className="group flex gap-3.5 anim-rise">
       <div className="h-7 w-7 shrink-0 rounded-md border border-line flex items-center justify-center text-ink mt-0.5">
         {streaming || m.status === "running" ? <AnimatedMark size={15} play="shimmer" /> : <AtlasMark size={15} />}</div>
       <div className="min-w-0 flex-1 space-y-3">
-        {m.data?.mode === "model" && m.data?.model && <div className="text-xs text-ink-3 font-mono -mb-1">{m.data.model}</div>}
+        {m.data?.mode === "model" && m.data?.model && (
+          <div className="chat-model-attribution">
+            <BrandMark model={m.data.model} fallbackIconKey={modelIcon} label={modelProvider?.name} size={24} />
+            <div className="min-w-0 flex-1">
+              <div className="chat-model-name" title={m.data.model}>{m.data.model}</div>
+              {modelProvider?.name && <div className="chat-model-provider">{modelProvider.name}</div>}
+            </div>
+            {m.status === "stopped" && <span className="chat-model-status">Stopped</span>}
+          </div>
+        )}
         {m.task_id && <RunPanel taskId={m.task_id} />}
         {waiting && !m.task_id && <div className="h-6 flex items-center gap-2 text-sm text-ink-3" role="status"><AnimatedMark size={22} play="shimmer" /><span className="am-thinking">Thinking…</span></div>}
         {text && <div className={cx(streaming && "caret")}><Markdown text={text} /></div>}
         {m.status === "error" && m.data?.error && (
           <div className="flex items-start gap-2 text-sm text-bad"><AlertCircle size={15} className="mt-0.5 shrink-0" /><span className="selectable">{m.data.error}</span></div>)}
-        {m.status === "stopped" && <div className="text-xs text-ink-3">Stopped.</div>}
         {!streaming && m.status !== "running" && text && (
           <div className="h-7 -ml-1.5 flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
             <button onClick={() => { navigator.clipboard?.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1200); }} aria-label="Copy reply"
@@ -554,6 +513,7 @@ export function Chat() {
 
 function ChatInner({ id }: { id?: string }) {
   const { go, settings } = useStore();
+  const { providers: chatProviders } = useHarnessData();
   const wide = settings?.["chat.width"] === "wide";
   const toast = useToast();
   const { data: conv, error, setData } = useApi<ConversationFull>(id ? `/conversations/${id}` : null, ["conversation"]);
@@ -659,7 +619,7 @@ function ChatInner({ id }: { id?: string }) {
             <div ref={scroller} onScroll={onScroll} className="flex-1 overflow-y-auto">
               <div className={cx("mx-auto px-8 pt-[84px] pb-8 space-y-7", wide ? "max-w-[1080px]" : "max-w-[820px]")}>
                 {!conv && <div className="flex justify-center py-16"><Loader2 size={18} className="animate-spin text-ink-3" /></div>}
-                {messages.map((m) => <MessageView key={m.id} m={m} live={live[m.id]} />)}
+                {messages.map((m) => <MessageView key={m.id} m={m} live={live[m.id]} providers={chatProviders} />)}
               </div>
             </div>
             <div className="shrink-0 px-8 pb-6 pt-2">

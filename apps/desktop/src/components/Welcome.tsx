@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, Check, Cloud, Cpu, Download, Globe, FolderPlus, 
 import { api, bytes, Model, openExternal, pickFolder, Provider, subscribe, useApi } from "../api";
 import { useStore } from "../store";
 import { Button, cx, Meter, Modal, Toggle, useAction } from "./ui";
+import { Avatar, useProfile } from "./Profile";
 import { AnimatedMark } from "./AnimatedMark";
 import { Markdown } from "./Markdown";
 import { ConnectForm, isConnected, Preset, ProviderTile } from "./Endpoints";
@@ -114,28 +115,37 @@ function Seg<T extends string | number>({ value, options, onChange, label }: { v
 // ------------------------------------------------------------------ personalise
 function PersonalizeStep({ onNext }: { onNext: () => void }) {
   const { settings, saveSettings, sidebarCollapsed, toggleSidebar } = useStore();
-  const { data: meta } = useApi<any>("/meta");
+  const { avatar, changePhoto } = useProfile();
+  const { busy, run } = useAction();
+  const [workspace, setWorkspace] = useState<string>(settings?.["profile.workspace"] || "");
   const [name, setName] = useState<string>(settings?.["profile.name"] || "");
-  const set = (k: string) => (v: any) => saveSettings({ [k]: v });   // applied live, so the welcome itself previews it
+  const set = (k: string) => (v: any) => run("preference", async () => { await saveSettings({ [k]: v }); return true; });   // applied live, so the welcome itself previews it
   const theme = settings?.["general.theme"] || "dark";
   const scale = Number(settings?.["general.ui_scale"] ?? 1);
   return (
     <>
-      <h1 className="text-center text-2xl leading-tight font-semibold tracking-[-0.02em] text-ink">Make it yours</h1>
+      <h1 className="text-center text-2xl leading-tight font-semibold tracking-[-0.02em] text-ink">{name.trim() ? `Welcome, ${name.trim()}` : "Make Atlas yours"}</h1>
       <p className="mt-2 text-center text-base text-ink-2">Changes apply as you pick them. Everything can be changed later in Settings.</p>
       <div className="mt-8 space-y-6">
+        <div className="flex items-center gap-4 rounded-xl border border-line bg-surface p-4">
+          <button onClick={changePhoto} aria-label="Change profile picture" className="rounded-full hover:opacity-80"><Avatar src={avatar} name={name || "You"} size={60} /></button>
+          <div className="min-w-0"><div className="text-sm font-medium text-ink">Your profile</div><p className="text-xs text-ink-2 mt-1">Your name and picture stay on this Mac.</p><Button size="sm" className="mt-2" onClick={changePhoto}>{avatar ? "Change photo" : "Add photo"}</Button></div>
+        </div>
         <div>
           <Label hint="Shown in the sidebar">Your name</Label>
           <input value={name} onChange={(e) => setName(e.target.value)} onBlur={() => set("profile.name")(name.trim())} maxLength={40}
-            placeholder={meta?.user || "Your name"} aria-label="Your name"
+            placeholder="What should Atlas call you?" aria-label="Your name"
             className="w-full h-10 px-3 rounded-md bg-surface border border-line text-base text-ink placeholder:text-ink-3 outline-none focus:border-line-strong" />
+        </div>
+        <div><Label hint="Shown below your name">Workspace label</Label>
+          <input value={workspace} onChange={(e) => setWorkspace(e.target.value)} onBlur={() => set("profile.workspace")(workspace.trim())} maxLength={60} placeholder="Personal workspace" aria-label="Workspace label" className="w-full h-10 px-3 rounded-md bg-surface border border-line text-base text-ink placeholder:text-ink-3 outline-none focus:border-line-strong" />
         </div>
         <div>
           <Label>Appearance</Label>
-          <div role="radiogroup" aria-label="Appearance" className="grid grid-cols-3 gap-2.5">
-            {(["dark", "light", "system"] as const).map((m) => (
+          <div role="radiogroup" aria-label="Appearance" className="grid grid-cols-2 gap-2.5">
+            {(["dark", "light"] as const).map((m) => (
               <Choice key={m} selected={theme === m} onClick={() => set("general.theme")(m)} preview={<ThemePreview mode={m} />}
-                title={m === "dark" ? "Dark" : m === "light" ? "Light" : "Match system"} />
+                title={m === "dark" ? "Dark" : "Light"} />
             ))}
           </div>
         </div>
@@ -148,11 +158,13 @@ function PersonalizeStep({ onNext }: { onNext: () => void }) {
             <Seg label="Send messages with" value={settings?.["chat.send_key"] || "enter"} onChange={set("chat.send_key")} options={[{ id: "enter", label: "Enter" }, { id: "mod_enter", label: "⌘ Enter" }]} /></div>
           <div><Label>Motion</Label>
             <Seg label="Motion" value={settings?.["general.reduce_motion"] ? "reduced" : "full"} onChange={(v) => set("general.reduce_motion")(v === "reduced")} options={[{ id: "full", label: "Full" }, { id: "reduced", label: "Reduced" }]} /></div>
+          <div><Label>Launch animation</Label><Seg label="Launch animation" value={settings?.["general.launch_animation"] !== false ? "on" : "off"} onChange={(v) => set("general.launch_animation")(v === "on")} options={[{ id: "on", label: "Play" }, { id: "off", label: "Skip" }]} /></div>
+          <div><Label>Welcome greeting</Label><Seg label="Welcome greeting" value={settings?.["profile.personalized_greeting"] !== false ? "name" : "atlas"} onChange={(v) => set("profile.personalized_greeting")(v === "name")} options={[{ id: "name", label: "Use my name" }, { id: "atlas", label: "Atlas only" }]} /></div>
           <div><Label hint="⌘B toggles it any time">Sidebar</Label>
             <Seg label="Sidebar" value={sidebarCollapsed ? "collapsed" : "expanded"} onChange={(v) => { if ((v === "collapsed") !== sidebarCollapsed) toggleSidebar(); }} options={[{ id: "expanded", label: "Expanded" }, { id: "collapsed", label: "Icons only" }]} /></div>
         </div>
       </div>
-      <div className="mt-8 flex justify-center"><Button variant="primary" onClick={() => { if (name.trim() !== (settings?.["profile.name"] || "")) set("profile.name")(name.trim()); onNext(); }} className="!h-10 !px-6">Continue</Button></div>
+      <div className="mt-8 flex justify-center"><Button variant="primary" busy={busy === "continue"} onClick={async () => { const saved = await run("continue", async () => { await saveSettings({ "profile.name": name.trim(), "profile.workspace": workspace.trim() }); return true; }); if (saved) onNext(); }} className="!h-10 !px-6">Continue</Button></div>
     </>
   );
 }

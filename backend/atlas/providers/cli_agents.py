@@ -84,6 +84,7 @@ class CLIAgentProvider(Provider):
         b = self.binary
         if not b:
             return {"ok": False, "error": f"`{self.binary_name}` CLI not found. Install it or set its path in the provider settings."}
+        p = None
         try:
             p = await asyncio.create_subprocess_exec(b, "--version", stdout=asyncio.subprocess.PIPE,
                                                      stderr=asyncio.subprocess.STDOUT, env=cli_env(b, bool(self.config.get("use_env_auth"))))
@@ -93,6 +94,10 @@ class CLIAgentProvider(Provider):
             return {"ok": True, "version": out.decode().strip().splitlines()[0] if out else "", "binary": b}
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "error": f"{e.__class__.__name__}: {e}"}
+        finally:
+            if p is not None and p.returncode is None:
+                await self._kill(p)
+                await p.communicate()
 
     async def _stream(self, run_id: str, argv: List[str], cwd: str, stdin_text: str,
                       on_line: Callable[[Dict[str, Any]], Awaitable[None]], timeout: float) -> int:
@@ -162,9 +167,16 @@ class ClaudeCodeProvider(CLIAgentProvider):
     binary_name = "claude"
 
     async def list_models(self) -> List[ModelInfo]:
-        names = ["default"] + list(self.config.get("models") or ["opus", "sonnet", "haiku"])
+        names = list(dict.fromkeys(["default"] + [n for n in (self.config.get("models") or ["opus", "sonnet", "haiku"]) if isinstance(n, str) and n.strip()]))
+        labels = {
+            "default": ("Claude Code default", "Use the model selected in Claude Code."),
+            "opus": ("Claude Opus", "For complex planning and deeper work."),
+            "sonnet": ("Claude Sonnet", "For everyday coding and conversation."),
+            "haiku": ("Claude Haiku", "For quick questions and focused tasks."),
+        }
         return [ModelInfo(name=n, provider_id=self.id, capabilities={"tools": True, "streaming": True, "agentic": True},
-                          details={"note": "Alias resolved by Claude Code using your Claude sign-in."}, state="available")
+                          details={"display_name": labels.get(n, (n, ""))[0], "description": labels.get(n, (n, ""))[1],
+                                   "note": "Alias resolved by Claude Code using your Claude sign-in."}, state="available")
                 for n in names]
 
     def _base(self, model: Optional[str]) -> List[str]:
@@ -256,10 +268,45 @@ class CodexProvider(CLIAgentProvider):
     binary_name = "codex"
 
     async def list_models(self) -> List[ModelInfo]:
-        names = ["default"] + list(self.config.get("models") or [])
+        def cached_catalog() -> Dict[str, Dict[str, Any]]:
+            # Read model metadata only. Never return identity, instructions, or other cache fields.
+            path = Path(os.environ.get("CODEX_HOME") or "~/.codex").expanduser() / "models_cache.json"
+            try:
+                if path.stat().st_size > 10_000_000:
+                    return {}
+                data = json.loads(path.read_text())
+                rows = data.get("models", []) if isinstance(data, dict) else []
+                if not isinstance(rows, list):
+                    return {}
+                catalog = {}
+                for row in rows[:100]:
+                    if not isinstance(row, dict) or row.get("visibility", "list") != "list":
+                        continue
+                    name = row.get("slug")
+                    if not isinstance(name, str) or not name.strip():
+                        continue
+                    catalog[name] = {"display_name": str(row.get("display_name") or name)[:128],
+                                     "description": str(row.get("description") or "")[:240],
+                                     "context_window": row.get("context_window"),
+                                     "vision": "image" in (row.get("input_modalities") or [])}
+                return catalog
+            except (OSError, ValueError, TypeError):
+                return {}
+
+        catalog = {} if self.config.get("oss") else await asyncio.to_thread(cached_catalog)
+        configured = self.config.get("models") or list(catalog)
+        names = list(dict.fromkeys(["default"] + [n for n in configured if isinstance(n, str) and n.strip()]))
         note = "Uses your Codex sign-in." if not self.config.get("oss") else f"Codex --oss via {self.config.get('local_provider', 'ollama')}."
-        return [ModelInfo(name=n, provider_id=self.id, capabilities={"tools": True, "streaming": True, "agentic": True},
-                          details={"note": note}, state="available") for n in names]
+        result = []
+        for name in names:
+            metadata = catalog.get(name, {})
+            context = metadata.get("context_window")
+            result.append(ModelInfo(name=name, provider_id=self.id,
+                                    context_length=context if isinstance(context, int) and context > 0 else None,
+                                    capabilities={"tools": True, "streaming": True, "agentic": True, "vision": bool(metadata.get("vision"))},
+                                    details={"note": note, "display_name": "Codex default" if name == "default" else metadata.get("display_name", name),
+                                             "description": "Use the model selected in Codex." if name == "default" else metadata.get("description", "")}, state="available"))
+        return result
 
     def _base(self, model: Optional[str], sandbox: str, cwd: str) -> List[str]:
         b = self.binary

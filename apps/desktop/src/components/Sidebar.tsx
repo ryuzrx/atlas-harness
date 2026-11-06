@@ -1,11 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { MessageSquare, FolderKanban, FolderPlus, Folder, FolderGit2, Sparkles, Layers, Play, SquarePlus, Plus, Search, Settings, MoreHorizontal, X } from "lucide-react";
+import { MessageSquare, FolderKanban, FolderPlus, Folder, FolderGit2, Sparkles, Layers, Play, SquarePlus, Plus, Search, Settings, MoreHorizontal, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { api, Project, useApi } from "../api";
 import { useAddProject } from "./useAddProject";
 import { Mode, RouteName, useStore } from "../store";
 import { cx, Menu, useAction } from "./ui";
 import { AtlasMark, AtlasWordmark } from "./Logo";
-import { Avatar, useProfile } from "./Profile";
 import { ProfileCard } from "./Profile";
 
 export { AtlasMark as Logo };
@@ -24,10 +23,10 @@ function NavItem({ active, collapsed, icon: Icon, label, onClick, badge }: {
   return (
     <button onClick={onClick} title={collapsed ? label : undefined} aria-label={collapsed ? label : undefined}
       aria-current={active ? "page" : undefined}
-      className={cx("relative z-[1] flex items-center gap-2.5 rounded-md text-sm no-drag",
-        collapsed ? "h-9 w-9 mx-auto justify-center" : "h-8 w-full px-2.5",
-        active ? "text-ink font-medium" : "text-ink hover:bg-hover")}>
-      <Icon size={16} strokeWidth={1.7} className={cx("shrink-0", active ? "text-ink" : "text-ink-2")} />
+      className={cx("sidebar-nav-item relative z-[1] flex items-center gap-2.5 rounded-lg text-sm no-drag",
+        collapsed ? "h-11 w-11 mx-auto justify-center" : "h-10 w-full px-3",
+        active ? "bg-selected text-ink font-medium" : "text-ink-2 hover:text-ink hover:bg-hover")}>
+      <Icon size={collapsed ? 20 : 17} strokeWidth={1.7} className={cx("shrink-0", active ? "text-ink" : "text-ink-2")} />
       {!collapsed && <span className="flex-1 text-left truncate">{label}</span>}
       {!!badge && (collapsed
         ? <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-ink" />
@@ -147,18 +146,19 @@ function ModeSwitch({ collapsed }: { collapsed: boolean }) {
     const next = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"].includes(e.key) ? MODES[(i + 1) % 2] : null;
     if (!next) return;
     e.preventDefault(); switchMode(next.id);
-    requestAnimationFrame(() => (e.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-mode="${next.id}"]`)?.focus());
+    const target = e.currentTarget;
+    requestAnimationFrame(() => target.querySelector<HTMLElement>(`[data-mode="${next.id}"]`)?.focus());
   };
   return (
     <div role="tablist" aria-label="Workspace mode" onKeyDown={onKey}
-      className={cx("no-drag shrink-0 gap-0.5 p-[3px] rounded-md bg-active", collapsed ? "flex flex-col mx-2 mt-2" : "flex mx-3 mt-2")}>
+      className={cx("no-drag shrink-0 gap-0.5 p-[3px] rounded-md bg-active", collapsed ? "flex flex-col mx-3 mt-2" : "flex mx-3 mt-2")}>
       {MODES.map((m) => {
         const on = mode === m.id;
         return (
           <button key={m.id} data-mode={m.id} role="tab" aria-selected={on} tabIndex={on ? 0 : -1} aria-label={m.label} title={collapsed ? m.label : undefined}
             onClick={() => switchMode(m.id)}
             className={cx("flex-1 h-7 flex items-center justify-center gap-1.5 rounded-[6px] text-sm font-medium transition-[background-color,color,box-shadow] duration-200 ease-[var(--ease)]",
-              collapsed && "h-8",
+              collapsed && "!h-10 !flex-none",
               on ? "bg-surface text-ink shadow-[var(--shadow)]" : "text-ink-2 hover:text-ink")}>
             <m.icon size={15} strokeWidth={1.7} />
             {!collapsed && <span>{m.label}</span>}
@@ -207,56 +207,35 @@ function ProjectList() {
 export function Sidebar({ pending, user }: { pending: number; user?: string }) {
   const { route, go, mode, settingsOpen, sidebarCollapsed: collapsed, toggleSidebar } = useStore();
   const name = user || "you";
-  const { avatar: avatarSrc } = useProfile();
-  const idx = NAV.findIndex((n) => n.match.includes(route.name));
-  const rowH = collapsed ? 36 : 32;
   return (
-    <aside style={{ width: collapsed ? 60 : 248 }} aria-label="Sidebar"
-      className="h-full shrink-0 flex flex-col bg-[var(--sidebar)] border-r border-line transition-[width] duration-300 ease-[var(--ease)] overflow-hidden">
+    <aside data-collapsed={collapsed} aria-label="Sidebar" id="atlas-sidebar"
+      className="atlas-sidebar h-full shrink-0 flex flex-col bg-[var(--sidebar)] border-r border-line">
       {/* traffic lights sit in this strip */}
       <div className="drag h-[44px] shrink-0" />
-      <div className={cx("shrink-0 flex items-center", collapsed ? "flex-col gap-2 px-2 pb-2" : "h-10 pl-[18px] pr-3 gap-1 mb-1")}>
-        {collapsed ? (
-          <>
-            <button onClick={toggleSidebar} aria-label="Expand sidebar" title="Expand sidebar  ⌘B"
-              className="h-10 w-10 flex items-center justify-center rounded-md text-ink hover:bg-hover no-drag"><AtlasMark size={22} /></button>
-            <button onClick={() => go({ name: "chat" })} aria-label="New chat" title="New chat  ⌘N"
-              className="h-10 w-10 flex items-center justify-center rounded-md text-ink hover:bg-hover no-drag"><SquarePlus size={18} strokeWidth={1.6} /></button>
-          </>
-        ) : (
-          <>
-            <button onClick={() => go({ name: "chat" })} className="flex-1 min-w-0 text-left no-drag" aria-label="Atlas home"><AtlasWordmark /></button>
-            <button onClick={() => go({ name: "chat" })} aria-label="New chat" title="New chat  ⌘N"
-              className="h-8 w-8 flex items-center justify-center rounded-md text-ink-2 hover:text-ink hover:bg-hover no-drag"><SquarePlus size={17} strokeWidth={1.6} /></button>
-          </>
-        )}
+      <div className={cx("shrink-0 flex items-center h-12", collapsed ? "justify-center" : "pl-[18px] pr-3 gap-2")}>
+        {!collapsed && <button onClick={() => go({ name: "chat" })} className="flex-1 min-w-0 text-left no-drag sidebar-label" aria-label="Atlas home"><AtlasWordmark /></button>}
+        <button onClick={toggleSidebar} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} aria-controls="atlas-sidebar-content" title={`${collapsed ? "Expand" : "Collapse"} sidebar  ⌘B`}
+          className="sidebar-toggle h-9 w-9 shrink-0 flex items-center justify-center rounded-lg text-ink-2 hover:text-ink hover:bg-hover no-drag">
+          {collapsed ? <PanelLeftOpen size={19} strokeWidth={1.7} /> : <PanelLeftClose size={19} strokeWidth={1.7} />}
+        </button>
       </div>
-
+      <div className={cx("shrink-0 mt-1", collapsed ? "px-3" : "px-3")}>
+        <button onClick={() => go({ name: "chat" })} aria-label="New chat" title={collapsed ? "New chat  ⌘N" : undefined}
+          className={cx("sidebar-nav-item flex items-center gap-2.5 rounded-lg text-ink hover:bg-hover no-drag", collapsed ? "h-11 w-11 mx-auto justify-center" : "h-10 w-full px-3")}>
+          <SquarePlus size={collapsed ? 20 : 17} strokeWidth={1.7} />{!collapsed && <span className="sidebar-label text-sm">New chat</span>}
+        </button>
+      </div>
       <ModeSwitch collapsed={collapsed} />
-
-      <nav aria-label="Primary" className={cx("relative shrink-0 flex flex-col gap-0.5", collapsed ? "px-2 pt-4" : "px-3 pt-3 pb-3")}>
-        {/* one highlight that glides to the active page */}
-        <span aria-hidden className={cx("nav-indicator absolute rounded-md bg-selected", collapsed ? "left-1/2 -ml-5 w-10" : "left-3 right-3")}
-          style={{ top: collapsed ? 16 : 12, height: rowH, transform: `translateY(${Math.max(idx, 0) * (rowH + 2)}px)`, opacity: idx < 0 ? 0 : 1 }} />
-        {NAV.map((n) => (
-          <NavItem key={n.id} active={n.match.includes(route.name)} collapsed={collapsed} icon={n.icon} label={n.label}
-            badge={n.id === "tasks" ? pending : undefined} onClick={() => go({ name: n.id })} />
-        ))}
+      <nav aria-label="Primary" className={cx("shrink-0 flex flex-col gap-1 px-3 pt-5 pb-4")}>
+        {NAV.map((n) => <NavItem key={n.id} active={n.match.includes(route.name)} collapsed={collapsed} icon={n.icon} label={n.label}
+          badge={n.id === "tasks" ? pending : undefined} onClick={() => go({ name: n.id })} />)}
       </nav>
-
-      {collapsed ? <div className="flex-1" /> : (
-        <div className="min-h-0 flex-1 flex flex-col mx-3 pt-2">
-          {mode === "chat" ? <ChatHistory /> : <ProjectList />}
-        </div>)}
-
-      <div className={cx("shrink-0", collapsed ? "px-2 pb-4 pt-2" : "px-3 pt-2 pb-3")}>
-        {collapsed ? (
-          <button onClick={() => go({ name: "settings" })} aria-label="Settings" title="Settings  ⌘,"
-            className={cx("h-10 w-10 mx-auto flex items-center justify-center rounded-md no-drag", settingsOpen ? "bg-selected text-ink" : "text-ink-2 hover:bg-hover hover:text-ink")}>
-            <Avatar src={avatarSrc} name={name} size={30} /></button>
-        ) : (
-          <ProfileCard name={name} />
-        )}
+      <div id="atlas-sidebar-content" className={cx("min-h-0 flex-1 flex flex-col", !collapsed && "mx-3 pt-2")}>
+        {!collapsed && <div className="sidebar-label min-h-0 flex-1 flex flex-col">{mode === "chat" ? <ChatHistory /> : <ProjectList />}</div>}
+      </div>
+      <div className="shrink-0 px-3 pt-3 pb-3 border-t border-line space-y-2">
+        <NavItem active={settingsOpen} collapsed={collapsed} icon={Settings} label="Settings" onClick={() => go({ name: "settings" })} />
+        <ProfileCard name={name} collapsed={collapsed} />
       </div>
     </aside>
   );

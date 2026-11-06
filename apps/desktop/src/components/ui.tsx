@@ -14,7 +14,7 @@ export function Button({ variant = "secondary", size = "md", icon, busy, classNa
       disabled={disabled || busy}
       className={cx(
         "inline-flex items-center justify-center gap-1.5 font-medium whitespace-nowrap rounded-md disabled:opacity-45 disabled:pointer-events-none no-drag",
-        size === "sm" ? "h-7 px-2.5 text-xs" : size === "lg" ? "h-9 px-4 text-sm" : "h-8 px-3 text-sm",
+        size === "sm" ? "h-8 px-3 text-xs" : size === "lg" ? "h-10 px-4 text-sm" : "h-9 px-3.5 text-sm",
         variant === "primary" && "btn-accent shadow-[var(--shadow)]",
         variant === "secondary" && "neu-btn text-ink shadow-[var(--shadow)]",
         variant === "ghost" && "text-ink-2 hover:bg-hover hover:text-ink",
@@ -75,7 +75,7 @@ export function Card({ className, children, ...p }: React.HTMLAttributes<HTMLDiv
 
 export function SectionTitle({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between h-7 mb-2">
+    <div className="flex items-center justify-between h-8 mb-3">
       <h2 className="text-base font-semibold text-ink">{children}</h2>
       {action}
     </div>
@@ -84,7 +84,7 @@ export function SectionTitle({ children, action }: { children: React.ReactNode; 
 
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: React.ReactNode; actions?: React.ReactNode }) {
   return (
-    <div className="flex items-end justify-between gap-4 mb-6 flex-wrap">
+    <div className="flex items-end justify-between gap-5 mb-8 flex-wrap">
       <div className="min-w-0">
         <h1 className="text-2xl font-semibold text-ink [text-wrap:balance]">{title}</h1>
         {subtitle && <p className="text-ink-2 mt-1 text-sm">{subtitle}</p>}
@@ -115,7 +115,7 @@ export function Field({ label, hint, children }: { label: string; hint?: React.R
   );
 }
 
-const inputCls = "w-full h-8 px-2.5 rounded-md bg-[var(--sunken)] border border-line text-sm text-ink placeholder:text-ink-3 focus:outline-none focus:border-line-strong focus:ring-[3px] focus:ring-[var(--ring)] transition-[border-color,box-shadow] duration-150";
+const inputCls = "w-full h-9 px-3 rounded-md bg-[var(--sunken)] border border-line text-sm text-ink placeholder:text-ink-3 focus:outline-none focus:border-line-strong focus:ring-[3px] focus:ring-[var(--ring)] transition-[border-color,box-shadow] duration-150";
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
   ({ className, ...p }, ref) => <input ref={ref} {...p} className={cx(inputCls, className)} />);
 export function TextArea({ className, ...p }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {

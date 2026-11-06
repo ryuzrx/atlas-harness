@@ -14,21 +14,29 @@ export function TeamAdvisor({ onDone, onSkip }: { onDone: (created: number) => v
   const templates: Record<string, Tpl> = meta?.templates || {};
   const [need, setNeed] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set(["engineering"]));
+  const [creating, setCreating] = useState(false);
   const [sugg, setSugg] = useState<Suggestion | null>(null);
   const { busy, run } = useAction();
 
   const suggest = async () => {
+    if (busy || creating || !need.trim()) return;
     const r = await run("s", () => api<Suggestion>("/teams/suggest", { body: { need } }));
     if (r) { setSugg(r); setPicked(new Set(r.teams)); }
   };
   const toggle = (k: string) => setPicked((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
   const create = async () => {
+    if (busy || creating || !picked.size) return;
+    setCreating(true);
     let made = 0;
-    for (const k of picked) {
-      const t = await run("c", () => api("/teams", { body: { template: k } }));
-      if (t) made++;
-    }
-    onDone(made);
+    const remaining = new Set(picked);
+    try {
+      for (const k of picked) {
+        const t = await run("c", () => api("/teams", { body: { template: k } }));
+        if (t) { made++; remaining.delete(k); }
+      }
+      setPicked(remaining);
+      if (!remaining.size) onDone(made);
+    } finally { setCreating(false); }
   };
 
   return (
@@ -43,7 +51,7 @@ export function TeamAdvisor({ onDone, onSkip }: { onDone: (created: number) => v
         <div className="flex flex-wrap items-center gap-1.5 mt-1">
           {IDEAS.map((i) => <button key={i} onClick={() => setNeed((n) => (n ? n.replace(/\.?\s*$/, ". ") : "") + i)} className="h-7 px-2.5 rounded-full border border-line text-xs text-ink-2 hover:text-ink hover:bg-hover">{i}</button>)}
           <div className="flex-1" />
-          <Button size="sm" variant="primary" icon={busy === "s" ? <Spinner /> : <Sparkles size={13} />} disabled={!need.trim() || busy === "s"} onClick={suggest}>Suggest teams</Button>
+          <Button size="sm" variant="primary" icon={busy === "s" ? <Spinner /> : <Sparkles size={13} />} disabled={!need.trim() || busy !== null || creating} onClick={suggest}>Suggest teams</Button>
         </div>
       </div>
       {sugg && (
@@ -56,7 +64,7 @@ export function TeamAdvisor({ onDone, onSkip }: { onDone: (created: number) => v
         {Object.entries(templates).map(([k, t]) => {
           const on = picked.has(k); const suggested = sugg?.teams.includes(k);
           return (
-            <button key={k} onClick={() => toggle(k)} role="checkbox" aria-checked={on}
+            <button key={k} disabled={creating} onClick={() => toggle(k)} role="checkbox" aria-checked={on}
               className={cx("text-left rounded-lg border p-3.5 flex items-center gap-3.5 transition-colors", on ? "border-ink-2 bg-selected" : "border-line bg-surface hover:bg-hover")}>
               <span className={cx("h-5 w-5 rounded-sm border flex items-center justify-center shrink-0", on ? "border-ink bg-ink text-[var(--base)]" : "border-line-strong")}>{on && <Check size={13} strokeWidth={2.5} />}</span>
               <span className="min-w-0 flex-1">
@@ -68,8 +76,8 @@ export function TeamAdvisor({ onDone, onSkip }: { onDone: (created: number) => v
         })}
       </div>
       <div className="mt-6 flex items-center justify-center gap-3">
-        {onSkip && <Button variant="ghost" onClick={onSkip}>Skip for now</Button>}
-        <Button variant="primary" busy={busy === "c"} disabled={!picked.size} onClick={create} className="!h-10 !px-6">{picked.size ? `Create ${picked.size} team${picked.size === 1 ? "" : "s"}` : "Pick a team"}</Button>
+        {onSkip && <Button variant="ghost" disabled={creating || busy !== null} onClick={onSkip}>Skip for now</Button>}
+        <Button variant="primary" busy={creating} disabled={!picked.size || busy !== null} onClick={create} className="!h-10 !px-6">{picked.size ? `Create ${picked.size} team${picked.size === 1 ? "" : "s"}` : "Pick a team"}</Button>
       </div>
     </div>
   );
