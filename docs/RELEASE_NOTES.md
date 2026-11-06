@@ -6,9 +6,10 @@
 
 - Chat access now offers Read only and Workspace presets. Workspace remains the default; the backend enforces the selected permission ceiling for agent and team runs.
 - Atlas-managed agents can ask a question in chat and resume the same run after an answer.
+- Work projects show their chats in the project list. New project chats open in the regular Chat workspace and keep the selected project attached.
 - Added opt-in Atlas Computer Use for eligible models, with per-chat screen disclosure, approval before clicks/typing/key presses, macOS Screen Recording and Accessibility permissions, and a run Stop control. Custom localhost endpoints also require screen disclosure.
 - Atlas can build within the selected project and inspect a local browser preview through Computer Use. Screen captures are not saved by default. Stop prevents later actions; a Mac action already in progress may finish.
-- Computer Use requires verified image and tool capability. Team and CLI modes are not available for Computer Use in this version.
+- Models known to lack image or tool support are blocked. Models whose capabilities are unknown can be tried after confirmation; the backend still rejects models that explicitly report they cannot handle the request. Team and CLI modes are not available for Computer Use in this version.
 
 ## 0.3.4 — 2026-11-05
 
