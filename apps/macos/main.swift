@@ -38,15 +38,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKSc
     var lastCaptureSize: CGSize?
     var lastCaptureBounds: CGRect?
     var lastCaptureAt = Date.distantPast
+    var companion: CompanionController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
         buildWindow()
+        companion = CompanionController(token: token) { [weak self] in self?.showMainWindow() }
+        companion?.state.openChat = { [weak self] id in
+            self?.showMainWindow()
+            self?.webView.evaluateJavaScript("location.hash = '#/chat/\(id)'")
+        }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         startBackend()
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    // The pet, island and menu bar keep working with the window closed; the Dock icon or menu reopens it.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { showMainWindow() }
+        return true
+    }
+
+    func showMainWindow() {
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
 
     func applicationWillTerminate(_ notification: Notification) {
         terminating = true
@@ -65,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKSc
                           backing: .buffered, defer: false)
         window.title = "Atlas"
         window.delegate = self
+        window.isReleasedWhenClosed = false
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.backgroundColor = .windowBackgroundColor
         window.titleVisibility = .hidden
@@ -202,6 +220,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKSc
             if line.hasPrefix("ATLAS_READY "), let p = Int(line.dropFirst(12).trimmingCharacters(in: .whitespaces)) {
                 port = p
                 ready = true
+                companion?.start(port: p)
                 webView.load(URLRequest(url: URL(string: "http://127.0.0.1:\(p)/#token=\(token)")!))
             }
         }
