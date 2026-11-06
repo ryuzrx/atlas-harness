@@ -17,12 +17,12 @@
 
 <p align="center"><a href="https://github.com/ryuzrx/atlas-harness/releases/latest">Download for macOS</a> &nbsp; · &nbsp; <a href="#build-from-source">Build from source</a> &nbsp; · &nbsp; <a href="docs/ARCHITECTURE.md">Architecture</a></p>
 
-![Atlas Models workspace with local endpoints and the model library](docs/images/models-workspace.png)
+![Atlas chat workspace](docs/images/chat-workspace.png)
 <p align="center"><sub>Light-theme screenshots use fictional teams and a demo profile.</sub></p>
 
 ## Explore Atlas
 
-[Chat & Work](#chat--work) · [Models & providers](#models--providers) · [Teams & agents](#teams--agents) · [Personalization](#personalization) · [Install](#install) · [User guide](docs/USER_GUIDE.md) · [Troubleshooting](docs/TROUBLESHOOTING.md)
+[Chat & Work](#chat--work) · [Models & providers](#models--providers) · [Teams & agents](#teams--agents) · [Personalization](#personalization) · [Install](#install) · [User guide](docs/USER_GUIDE.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Screenshot gallery](docs/SCREENSHOTS.md)
 
 ## One workspace, from a question to a project
 
@@ -91,6 +91,9 @@ The Agents page provides search, team and status filters, pause/resume controls,
 
 ## Personalization
 
+![Atlas personalized welcome animation](docs/images/welcome-animation.png)
+
+
 Set your display name, profile picture, and workspace label during the welcome guide or from the profile menu. Choose Light or Dark, interface size, chat width, message-send shortcut, and expanded or icon-only navigation.
 
 The launch sequence can greet you by name and opens the workspace automatically when it finishes. You can choose an Atlas-only greeting, disable the launch animation, or reduce motion in **Settings → Appearance**. No entry button is required on normal launches.
@@ -154,6 +157,7 @@ Agents have project-scoped file access, tool permissions, command controls, and 
 
 | Read this | For |
 | --- | --- |
+| [Screenshot gallery](docs/SCREENSHOTS.md) | Welcome, setup, chat, models, teams, agents, profile, and settings |
 | [User guide](docs/USER_GUIDE.md) | Setup, chat, local models, teams, tools, and personalization |
 | [Troubleshooting](docs/TROUBLESHOOTING.md) | Connection errors, downloads, image support, and CLI discovery |
 | [Release notes](docs/RELEASE_NOTES.md) | Versioned product changes |
