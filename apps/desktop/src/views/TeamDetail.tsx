@@ -1,45 +1,15 @@
 import React, { useEffect, useState } from "react";
-import { ChevronLeft, Plus, Crown, Send, Check, Trash2, Sparkles } from "lucide-react";
+import { ChevronLeft, Plus, Send, Check, Trash2, Users } from "lucide-react";
 import { Agent, ago, api, Message, Project, Task, Team, useApi } from "../api";
 import { useStore } from "../store";
 import { ExecutionViewer, Markdownish } from "../components/Execution";
-import { ModelPicker } from "../components/Inspector";
-import { Badge, Button, Card, cx, Empty, Field, Input, Modal, Select, StatusBadge, Tabs, TextArea, useAction, useToast } from "../components/ui";
+import { AgentRoster, AutoAssignModels, CreateAgentModal } from "../components/AgentManagement";
+import { Badge, Button, Card, cx, Empty, Field, Input, Modal, Select, StatusBadge, Tabs, TextArea, useAction } from "../components/ui";
 import { TaskTable, DependencyGraph } from "./Tasks";
-import { teamColor } from "./Teams";
 
-type Tab = "overview" | "agents" | "tasks" | "execution" | "context" | "artifacts" | "settings";
 
-function AddAgentModal({ open, onClose, teamId }: { open: boolean; onClose: () => void; teamId: string }) {
-  const { data: presets = [] } = useApi<any[]>(open ? "/presets" : null, ["preset"]);
-  const [name, setName] = useState(""); const [role, setRole] = useState(""); const [instr, setInstr] = useState("");
-  const [pm, setPm] = useState<{ p?: string; m?: string }>({}); const [preset, setPreset] = useState("");
-  const { busy, run } = useAction();
-  const { select } = useStore();
-  const create = async () => {
-    const p = presets.find((x) => x.id === preset)?.data || {};
-    const a = await run("c", () => api<Agent>("/agents", { body: { ...p, team_id: teamId, name: name || p.name, role: role || p.role,
-      instructions: instr || p.instructions || "", provider_id: pm.p || p.provider_id, model: pm.m || p.model,
-      tools: p.tools || ["read", "write", "shell", "git", "messages", "memory"] } }), "Agent added");
-    if (a) { onClose(); select({ kind: "agent", id: a.id }); }
-  };
-  return (
-    <Modal open={open} onClose={onClose} title="Add agent"
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" busy={busy === "c"} disabled={!(name || preset) || !(role || preset)} onClick={create}>Add agent</Button></>}>
-      <div className="space-y-3">
-        {presets.length > 0 && <Field label="Start from preset"><Select value={preset} onChange={(e) => setPreset(e.target.value)}>
-          <option value="">None</option>{presets.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>}
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="API Engineer" /></Field>
-          <Field label="Role key"><Input value={role} onChange={(e) => setRole(e.target.value.replace(/\s+/g, "_").toLowerCase())} placeholder="api" /></Field>
-        </div>
-        <Field label="Model"><ModelPicker providerId={pm.p} model={pm.m} onChange={(p, m) => setPm({ p, m })} /></Field>
-        <Field label="Instructions"><TextArea rows={3} value={instr} onChange={(e) => setInstr(e.target.value)} /></Field>
-        <div className="text-xs text-ink-2">Permissions default to read, write, shell, git, messages and memory. Adjust them in the inspector.</div>
-      </div>
-    </Modal>
-  );
-}
+type Tab = "overview" | "agents" | "execution" | "resources" | "settings";
+const tabFor = (tab?: string): Tab => tab === "context" || tab === "artifacts" ? "resources" : tab === "tasks" ? "overview" : ["overview", "agents", "execution", "resources", "settings"].includes(tab || "") ? tab as Tab : "overview";
 
 function MemoryEditor({ scope, scopeId, title }: { scope: string; scopeId?: string; title: string }) {
   const { data: rows = [], reload } = useApi<any[]>(scopeId ? `/memory?scope=${scope}&scope_id=${scopeId}` : null, ["memory"]);
@@ -84,9 +54,10 @@ const MSG_LABEL: Record<string, string> = {
 
 export function TeamDetail({ id }: { id: string }) {
   const { go, select, setNewTaskOpen, route } = useStore();
-  const [tab, setTab] = useState<Tab>((route.tab as Tab) || "overview");
-  const { data: team, reload } = useApi<Team>(`/teams/${id}`, ["team", "agent", "task"]);
-  const { data: agents = [] } = useApi<Agent[]>(`/agents?team_id=${id}`, ["agent"]);
+  const [tab, setTab] = useState<Tab>(() => tabFor(route.tab));
+  useEffect(() => { setTab(tabFor(route.tab)); setObjective(""); setAdding(false); }, [id, route.tab]);
+  const { data: team, error: teamError, reload } = useApi<Team>(`/teams/${id}`, ["team", "agent", "task"]);
+  const { data: agents = [], loading: agentsLoading, reload: reloadAgents } = useApi<Agent[]>(`/agents?team_id=${id}`, ["agent", "team", "task"]);
   const { data: tasks = [] } = useApi<Task[]>(`/tasks?team_id=${id}&limit=300`, ["task"]);
   const { data: messages = [] } = useApi<Message[]>(`/messages?team_id=${id}&limit=60`, ["task"]);
   const { data: projects = [] } = useApi<Project[]>("/projects", ["project"]);
@@ -94,46 +65,48 @@ export function TeamDetail({ id }: { id: string }) {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState<Partial<Team>>({});
   const { busy, run } = useAction();
-  const toast = useToast();
   useEffect(() => { if (team) setForm({ name: team.name, description: team.description, project_id: team.project_id }); }, [team?.id, team?.updated_at]);
-  if (!team) return null;
+  if (!team) return <Card className="p-6 text-sm text-ink-2" role={teamError ? "alert" : "status"}>{teamError ? <>Couldn’t load this team. <Button onClick={reload}>Try again</Button></> : "Loading team…"}</Card>;
   const agentName = (aid?: string) => agents.find((a) => a.id === aid)?.name || "User";
   const current = tasks.find((t) => t.id === team.current?.id);
   const currentKids = tasks.filter((t) => t.parent_id === current?.id);
+  const lead = agents.find((a) => a.id === team.lead_agent_id);
+  const ready = Boolean(lead?.model && lead?.provider_id && lead.status !== "paused" && !team.archived);
   const submit = async () => {
-    const r = await run("o", () => api<Task>("/objectives", { body: { team_id: id, objective } }), "Objective submitted");
+    if (!objective.trim() || !ready || busy) return;
+    const r = await run("o", () => api<Task>("/objectives", { body: { team_id: id, objective: objective.trim() } }), "Objective submitted");
     if (r) { setObjective(""); setTab("execution"); }
   };
   const done = tasks.filter((t) => t.kind !== "objective" && t.status === "completed");
 
   return (
-    <div className="max-w-[1180px] mx-auto">
+    <div className="max-w-[1100px] mx-auto text-ink">
       <button onClick={() => go({ name: "teams" })} className="flex items-center gap-1 text-xs text-ink-2 hover:text-ink mb-3"><ChevronLeft size={14} />Teams</button>
-      <div className="flex items-start gap-3 mb-5">
-        <span className="mt-2.5 h-2.5 w-2.5 rounded-full" style={{ background: teamColor(team.id) }} />
+      <div className="flex items-start gap-3 mb-6 flex-wrap">
+        <span className="h-11 w-11 rounded-xl border border-line bg-active flex items-center justify-center text-ink-2 shrink-0"><Users size={20} /></span>
         <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-semibold tracking-[-0.01em]">{team.name}</h1>
-          <div className="text-ink-2 text-sm">{team.description || "No description"} · {projects.find((p) => p.id === team.project_id)?.name || "no default project"}</div>
+          <h1 className="text-2xl font-semibold tracking-[-0.02em]">{team.name}</h1>
+          <div className="text-ink-2 text-sm">{team.description || "Your team workspace"}{team.project_id ? ` · ${projects.find((p) => p.id === team.project_id)?.name || "Project"}` : ""}</div>
         </div>
         <StatusBadge status={team.status} />
-        <Button variant="primary" icon={<Plus size={14} />} onClick={() => setNewTaskOpen(true, { teamId: id })}>New task</Button>
+        <Button variant="primary" icon={<Plus size={14} />} disabled={Boolean(team.archived)} onClick={() => setNewTaskOpen(true, { teamId: id })}>New task</Button>
       </div>
       <Tabs value={tab} onChange={setTab} tabs={[
-        { id: "overview", label: "Overview" }, { id: "agents", label: "Agents", count: agents.length },
-        { id: "tasks", label: "Tasks", count: tasks.length }, { id: "execution", label: "Execution" },
-        { id: "context", label: "Context" }, { id: "artifacts", label: "Artifacts", count: done.length }, { id: "settings", label: "Settings" }]} />
+        { id: "overview", label: "Work" }, { id: "agents", label: "Agents", count: agents.length },
+        { id: "execution", label: "Activity" }, { id: "resources", label: "Resources" }, { id: "settings", label: "Settings" }]} />
 
       {tab === "overview" && (
         <div className="grid grid-cols-[1fr_340px] gap-5 max-[1050px]:grid-cols-1">
           <div className="space-y-5 min-w-0">
-            <Card className="p-4">
-              <div className="font-medium mb-2">Give the team an objective</div>
+            <Card className="p-5">
+              <div className="font-medium mb-3">What should this team work on?</div>
               <TextArea rows={3} value={objective} onChange={(e) => setObjective(e.target.value)}
                 placeholder="e.g. Add rate limiting to the public API and cover it with tests."
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && objective.trim()) submit(); }} />
-              <div className="flex items-center mt-2">
-                <span className="text-xs text-ink-2">{agents.find((a) => a.id === team.lead_agent_id) ? `${agentName(team.lead_agent_id)} plans and delegates. ⌘↩ to submit.` : "Set a team lead in the Agents tab first."}</span>
-                <Button className="ml-auto" variant="primary" icon={<Send size={13} />} busy={busy === "o"} disabled={!objective.trim()} onClick={submit}>Submit</Button>
+              <div className="flex items-center gap-3 mt-3 flex-wrap">
+                <span className="text-xs text-ink-2">{team.archived ? "Restore this team in Settings to start work." : !lead ? "Choose a team lead in Settings first." : !lead.model || !lead.provider_id ? "Assign a model to your team lead first." : lead.status === "paused" ? "Resume your team lead in Agents first." : `${lead.name} will plan and delegate. ⌘ / Ctrl + Enter to start.`}</span>
+                {!ready && <Button size="sm" onClick={() => setTab(!lead || team.archived ? "settings" : "agents")}>{team.archived ? "Team settings" : !lead ? "Choose lead" : "Manage agents"}</Button>}
+                <Button className="ml-auto" variant="primary" icon={<Send size={13} />} busy={busy === "o"} disabled={!objective.trim() || !ready} onClick={submit}>Start work</Button>
               </div>
             </Card>
             <div>
@@ -164,41 +137,26 @@ export function TeamDetail({ id }: { id: string }) {
           </div>
         </div>)}
 
-      {tab === "agents" && (
-        <>
-          <div className="flex justify-end gap-2 mb-3">
-            <Button icon={<Sparkles size={14} />} busy={busy === "auto"} title="Choose models from connected endpoints for agents without a model"
-              onClick={() => run("auto", () => api<{ assigned: { id: string; name: string; model: string }[]; message: string }>(`/teams/${id}/agents/auto-assign`, { body: {} }))
-                .then((r) => { if (!r) return; toast(r.assigned.length ? `Assigned endpoints to ${r.assigned.length} agent${r.assigned.length === 1 ? "" : "s"}.` : r.message, r.assigned.length ? "ok" : "info"); reload(); })}>
-              Auto-assign models
-            </Button>
-            <Button icon={<Plus size={14} />} onClick={() => setAdding(true)}>Add agent</Button>
-          </div>
-          <Card className="overflow-hidden">
-            {agents.length === 0 ? <Empty title="No agents" body="Add agents or create the team from a template." /> : (
-              <table className="w-full text-sm">
-                <thead><tr className="text-left text-xs text-ink-2 border-b border-line"><th className="font-medium px-4 h-9">Agent</th><th className="font-medium">Role</th><th className="font-medium">Model</th><th className="font-medium w-28">Status</th></tr></thead>
-                <tbody>{agents.map((a) => (
-                  <tr key={a.id} onClick={() => select({ kind: "agent", id: a.id })} className="border-b border-line last:border-0 hover:bg-hover">
-                    <td className="px-4 h-11 font-medium"><div className="flex items-center gap-1.5">{a.name}{a.is_lead && <Crown size={12} className="text-warn" aria-label="Team lead" />}</div></td>
-                    <td className="text-ink-2">{a.role}</td>
-                    <td className="font-mono text-xs">{a.model || <span className="text-warn font-sans">unassigned</span>}</td>
-                    <td><StatusBadge status={a.status} /></td>
-                  </tr>))}</tbody>
-              </table>)}
-          </Card>
-          <AddAgentModal open={adding} onClose={() => setAdding(false)} teamId={id} />
-        </>)}
+      {tab === "overview" && tasks.length > 0 && <section className="mt-6 space-y-3"><h2 className="text-sm font-semibold">Task history</h2><TaskTable tasks={tasks} /></section>}
 
-      {tab === "tasks" && <TaskTable tasks={tasks} />}
+      {tab === "agents" && <div className="space-y-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap"><p className="text-sm text-ink-2">Choose an agent to edit its role, model or permissions.</p><div className="flex gap-2 flex-wrap">
+          {agents.some((a) => !a.model || !a.provider_id) && <AutoAssignModels teamId={id} onSaved={() => { reloadAgents(); reload(); }} disabled={Boolean(team.archived)} />}
+          <Button icon={<Plus size={14} />} onClick={() => setAdding(true)} disabled={Boolean(team.archived)}>Add agent</Button>
+        </div></div>
+        <AgentRoster agents={agents} loading={agentsLoading} onReload={reloadAgents} emptyAction={!team.archived && <Button onClick={() => setAdding(true)}>Add your first agent</Button>} />
+      </div>}
+      <CreateAgentModal open={adding} onClose={() => setAdding(false)} teamId={id} onSaved={() => { reloadAgents(); reload(); }} />
+
       {tab === "execution" && <ExecutionViewer teamId={id} height="calc(100vh - 290px)" />}
-      {tab === "context" && (
+      {tab === "resources" && (
         <div className="grid grid-cols-2 gap-4 max-[1000px]:grid-cols-1">
           <MemoryEditor scope="team" scopeId={id} title="Team memory" />
           <MemoryEditor scope="project" scopeId={team.project_id} title="Project memory" />
         </div>)}
-      {tab === "artifacts" && (
-        <div className="space-y-3">
+      {tab === "resources" && (
+        <div className="space-y-3 mt-6">
+          <h2 className="text-sm font-semibold">Results & artifacts</h2>
           {tasks.filter((t) => t.kind === "objective" && t.artifacts?.report).map((t) => (
             <Card key={t.id} className="p-4"><div className="flex items-center gap-2 mb-2"><span className="font-medium flex-1">{t.title}</span><StatusBadge status={t.status} />
               <Button size="sm" variant="ghost" onClick={() => select({ kind: "task", id: t.id })}>Inspect</Button></div>
@@ -221,11 +179,11 @@ export function TeamDetail({ id }: { id: string }) {
               <option value="">None</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
           <Field label="Team lead"><Select value={team.lead_agent_id || ""} onChange={(e) => run("l", () => api(`/agents/${e.target.value}`, { method: "PATCH", body: { make_lead: true } }), "Lead updated").then(reload)}>
             <option value="" disabled>Choose…</option>{agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</Select></Field>
-          <div className="flex gap-2 pt-1">
-            <Button variant="primary" busy={busy === "s"} onClick={() => run("s", () => api(`/teams/${id}`, { method: "PATCH", body: { ...form, project_id: form.project_id || null } }), "Team saved").then(reload)}>Save</Button>
+          <div className="flex gap-2 pt-1 flex-wrap">
+            <Button variant="primary" disabled={!form.name?.trim()} busy={busy === "s"} onClick={() => run("s", () => api(`/teams/${id}`, { method: "PATCH", body: { ...form, name: form.name?.trim(), project_id: form.project_id || null } }), "Team saved").then((result) => { if (result) reload(); })}>Save</Button>
             <Button onClick={() => run("d", () => api<Team>(`/teams/${id}/duplicate`, { body: {} }), "Duplicated").then((t) => t && go({ name: "team", id: t.id }))}>Duplicate</Button>
             <Button onClick={() => run("a", () => api(`/teams/${id}/archive`, { body: { archived: !team.archived } }), team.archived ? "Unarchived" : "Archived").then(reload)}>{team.archived ? "Unarchive" : "Archive"}</Button>
-            <Button variant="danger" className="ml-auto" onClick={() => confirm(`Delete ${team.name}?`) && run("x", () => api(`/teams/${id}`, { method: "DELETE" }), "Deleted").then(() => go({ name: "teams" }))}>Delete team</Button>
+            <Button variant="danger" className="ml-auto" onClick={() => confirm(`Delete ${team.name}?`) && run("x", () => api(`/teams/${id}`, { method: "DELETE" }), "Deleted").then((result) => { if (result) go({ name: "teams" }); })}>Delete team</Button>
           </div>
         </Card>)}
     </div>

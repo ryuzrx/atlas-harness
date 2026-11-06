@@ -534,6 +534,17 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
                                                   m.get("context_length") or 0, m.get("provider_name", ""), m["name"]))
         return min(available, key=lambda m: (m.get("size_bytes") or float("inf"), m.get("provider_name", ""), m["name"]))
 
+    def agent_tier(agent: Dict[str, Any]) -> str:
+        tier = (agent.get("config") or {}).get("tier")
+        if tier in ("reasoning", "coding", "light"):
+            return tier
+        role = str(agent.get("role") or "").lower()
+        if any(word in role for word in ("lead", "review", "architect", "security", "evaluator", "performance")):
+            return "reasoning"
+        if any(word in role for word in ("research", "analyst", "doc", "ux")):
+            return "light"
+        return "coding"
+
     @app.post("/api/teams/suggest")
     async def suggest_teams(body: Dict[str, Any] = Body(...)):
         need = str(body.get("need") or "").strip()[:1500]
@@ -559,6 +570,8 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
 
     @app.post("/api/teams")
     async def create_team(body: Dict[str, Any] = Body(...)):
+        if body.get("project_id"):
+            must("projects", body["project_id"])
         t = now()
         tpl = TEMPLATES.get(body.get("template") or "")
         tid = new_id("team")
@@ -569,11 +582,13 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
         available: Optional[List[Dict[str, Any]]] = None
         lead_id = None
         for spec in (tpl["agents"] if tpl else []):
-            route = (body.get("routing") or {}).get(spec["tier"]) or routing_for(spec["tier"])
+            route = (body.get("routing") or {}).get(spec["tier"]) or ({} if body.get("auto_assign_models") else routing_for(spec["tier"]))
             if not (route.get("provider_id") and route.get("model")):
                 if available is None:
                     available = available_agent_models(await S.router.models())
-                route = choose_agent_model(spec["tier"], available) or route
+                selected = choose_agent_model(spec["tier"], available)
+                if selected:
+                    route = {"provider_id": selected["provider_id"], "model": selected["name"]}
             aid = new_id("agent")
             S.db.insert("agents", {"id": aid, "team_id": tid, "name": spec["name"], "role": spec["role"],
                                    "instructions": spec["instructions"], "provider_id": route.get("provider_id"),
@@ -601,23 +616,12 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
         if not available:
             return {"assigned": [], "message": "No reachable model endpoints are available. Connect an endpoint and try again."}
 
-        def tier_for(agent: Dict[str, Any]) -> str:
-            tier = (agent.get("config") or {}).get("tier")
-            if tier in ("reasoning", "coding", "light"):
-                return tier
-            role = str(agent.get("role") or "").lower()
-            if any(word in role for word in ("lead", "review", "architect", "security", "evaluator", "performance")):
-                return "reasoning"
-            if any(word in role for word in ("research", "analyst", "doc", "ux")):
-                return "light"
-            return "coding"
-
         changed = []
         t = now()
         for agent in S.db.q("SELECT * FROM agents WHERE team_id=? ORDER BY created_at", (tid,)):
             if agent.get("provider_id") and agent.get("model"):
                 continue
-            model = choose_agent_model(tier_for(agent), available)
+            model = choose_agent_model(agent_tier(agent), available)
             if not model:
                 continue
             S.db.update("agents", agent["id"], {"provider_id": model["provider_id"], "model": model["name"], "updated_at": t})
@@ -693,13 +697,23 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
 
     @app.post("/api/agents")
     async def create_agent(body: Dict[str, Any] = Body(...)):
-        if not body.get("name") or not body.get("role"):
+        name = str(body.get("name") or "").strip()
+        role = str(body.get("role") or "").strip()
+        if not name or not role:
             raise HTTPException(400, "name and role are required")
+        if body.get("team_id"):
+            must("teams", body["team_id"])
         t = now()
         data = {k: v for k, v in body.items() if k in AGENT_FIELDS}
+        data.update(name=name, role=role)
         data.setdefault("tools", ["read", "messages", "memory"])
         data.setdefault("params", {"temperature": S.db.setting("agents.default_temperature")})
         data.setdefault("config", {"context_budget": S.db.setting("agents.default_context_budget"), "max_parallel": 1})
+        if body.get("auto_assign_model") and not (data.get("provider_id") and data.get("model")):
+            available = available_agent_models(await S.router.models())
+            selected = choose_agent_model(agent_tier(data), available)
+            if selected:
+                data.update(provider_id=selected["provider_id"], model=selected["name"])
         a = S.db.insert("agents", {**data, "id": new_id("agent"), "created_at": t, "updated_at": t})
         S.bus.changed("agent", a["id"])
         return agent_view(a)

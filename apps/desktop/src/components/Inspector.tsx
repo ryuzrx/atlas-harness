@@ -1,17 +1,17 @@
 import React, { useEffect, useState } from "react";
-import { X, Pause, Play, Square, Copy, GitMerge, RotateCcw, Trash2, Undo2 } from "lucide-react";
+import { X, Pause, Play, Square, MoreHorizontal, GitMerge, RotateCcw, Trash2, Undo2 } from "lucide-react";
 import { Agent, ago, api, dur, Model, Task, Team, useApi } from "../api";
 import { useStore } from "../store";
 import { ExecutionViewer, Markdownish } from "./Execution";
-import { Badge, Button, cx, Field, IconButton, Input, Modal, Select, StatusBadge, TextArea, Toggle, useAction } from "./ui";
+import { Badge, Button, cx, Field, IconButton, Input, Menu, Modal, Select, StatusBadge, TextArea, Toggle, useAction } from "./ui";
 
 export const PERMISSIONS: Record<string, string> = {
   read: "Read files & search", write: "Edit files", shell: "Run commands", git: "Git", memory: "Write memory",
   messages: "Message teammates", mcp: "MCP integrations",
 };
 
-export function ModelPicker({ providerId, model, onChange, className }: {
-  providerId?: string; model?: string; onChange: (providerId: string, model: string) => void; className?: string;
+export function ModelPicker({ providerId, model, onChange, className, emptyLabel = "No model assigned" }: {
+  providerId?: string; model?: string; onChange: (providerId: string, model: string) => void; className?: string; emptyLabel?: string;
 }) {
   const { data: models = [] } = useApi<Model[]>("/models", ["model", "provider"]);
   const value = providerId && model ? `${providerId}::${model}` : "";
@@ -20,7 +20,7 @@ export function ModelPicker({ providerId, model, onChange, className }: {
   const known = models.some((m) => `${m.provider_id}::${m.name}` === value);
   return (
     <Select className={className} value={value} onChange={(e) => { const [p, ...rest] = e.target.value.split("::"); onChange(p, rest.join("::")); }}>
-      <option value="">No model assigned</option>
+      <option value="">{emptyLabel}</option>
       {value && !known && <option value={value}>{model} (not currently available)</option>}
       {Object.entries(groups).map(([g, ms]) => (
         <optgroup key={g} label={g}>
@@ -59,42 +59,47 @@ export function AgentEditor({ agent, onSaved }: { agent: Agent; onSaved?: () => 
   const prm = (k: string, v: any) => setA((x) => ({ ...x, params: { ...x.params, [k]: v } }));
   const save = () => run("save", () => api(`/agents/${a.id}`, { method: "PATCH", body: {
     name: a.name, role: a.role, instructions: a.instructions, provider_id: a.provider_id || null, model: a.model || null,
-    params: a.params, tools: a.tools, config: a.config } }), "Agent saved").then(onSaved);
+    params: a.params, tools: a.tools, config: a.config } }), "Agent saved").then((result) => { if (result) onSaved?.(); });
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2.5">
         <Field label="Name"><Input value={a.name} onChange={(e) => set({ name: e.target.value })} /></Field>
-        <Field label="Role key" hint="Used by the lead when delegating."><Input value={a.role} onChange={(e) => set({ role: e.target.value })} /></Field>
+        <Field label="Role" hint="Used by the lead when delegating."><Input value={a.role} onChange={(e) => set({ role: e.target.value })} /></Field>
       </div>
       <Field label="Model" hint="Capabilities are checked per model; models without tool calling use ATLAS's text tool protocol.">
         <ModelPicker providerId={a.provider_id} model={a.model} onChange={(p, m) => set({ provider_id: p, model: m })} />
       </Field>
       <Field label="System instructions"><TextArea rows={4} value={a.instructions} onChange={(e) => set({ instructions: e.target.value })} /></Field>
-      <div className="grid grid-cols-3 gap-2.5">
-        <Field label="Temperature"><Input type="number" step="0.1" min="0" max="2" value={a.params.temperature ?? ""} onChange={(e) => prm("temperature", e.target.value === "" ? undefined : +e.target.value)} /></Field>
-        <Field label="Max output tokens"><Input type="number" value={a.params.max_tokens ?? ""} placeholder="default" onChange={(e) => prm("max_tokens", e.target.value ? +e.target.value : undefined)} /></Field>
-        <Field label="Context budget"><Input type="number" value={a.config.context_budget ?? 16000} onChange={(e) => cfg("context_budget", +e.target.value)} /></Field>
-        <Field label="Max steps"><Input type="number" value={a.config.max_steps ?? ""} placeholder="default" onChange={(e) => cfg("max_steps", e.target.value ? +e.target.value : undefined)} /></Field>
-        <Field label="Max duration (s)"><Input type="number" value={a.config.max_duration_s ?? ""} placeholder="default" onChange={(e) => cfg("max_duration_s", e.target.value ? +e.target.value : undefined)} /></Field>
-        <Field label="Retries"><Input type="number" min="0" max="5" value={a.config.max_retries ?? ""} placeholder="default" onChange={(e) => cfg("max_retries", e.target.value === "" ? undefined : +e.target.value)} /></Field>
-        <Field label="Parallel tasks"><Input type="number" min="1" max="4" value={a.config.max_parallel ?? 1} onChange={(e) => cfg("max_parallel", +e.target.value)} /></Field>
-        <Field label="Memory"><Select value={a.config.memory ?? "team"} onChange={(e) => cfg("memory", e.target.value)}>
-          <option value="team">Team + project</option><option value="project">Project only</option><option value="none">Task only</option></Select></Field>
-        <Field label="Workspace access"><Select value={a.config.workspace_access ?? "project"} onChange={(e) => cfg("workspace_access", e.target.value)}>
-          <option value="project">Project (isolated)</option><option value="readonly">Read-only</option></Select></Field>
-      </div>
-      <Field label="Reporting format"><Input value={a.config.report_format ?? ""} placeholder="e.g. Summary, Files changed, Tests run, Risks" onChange={(e) => cfg("report_format", e.target.value)} /></Field>
-      <Field label="Tool permissions">
-        <div className="grid grid-cols-2 gap-1.5 mt-0.5">
-          {Object.entries(PERMISSIONS).map(([k, label]) => (
-            <label key={k} className="flex items-center gap-2 text-sm">
-              <Toggle checked={a.tools.includes(k)} label={label} onChange={(v) => set({ tools: v ? [...a.tools, k] : a.tools.filter((t) => t !== k) })} />
-              {label}
-            </label>
-          ))}
+      <details className="rounded-lg border border-line p-3">
+        <summary className="cursor-pointer text-sm text-ink-2">Advanced settings & permissions</summary>
+        <div className="mt-4 space-y-4">
+          <div className="grid grid-cols-3 gap-2.5">
+            <Field label="Temperature"><Input type="number" step="0.1" min="0" max="2" value={a.params.temperature ?? ""} onChange={(e) => prm("temperature", e.target.value === "" ? undefined : +e.target.value)} /></Field>
+            <Field label="Max output tokens"><Input type="number" value={a.params.max_tokens ?? ""} placeholder="default" onChange={(e) => prm("max_tokens", e.target.value ? +e.target.value : undefined)} /></Field>
+            <Field label="Context budget"><Input type="number" value={a.config.context_budget ?? 16000} onChange={(e) => cfg("context_budget", +e.target.value)} /></Field>
+            <Field label="Max steps"><Input type="number" value={a.config.max_steps ?? ""} placeholder="default" onChange={(e) => cfg("max_steps", e.target.value ? +e.target.value : undefined)} /></Field>
+            <Field label="Max duration (s)"><Input type="number" value={a.config.max_duration_s ?? ""} placeholder="default" onChange={(e) => cfg("max_duration_s", e.target.value ? +e.target.value : undefined)} /></Field>
+            <Field label="Retries"><Input type="number" min="0" max="5" value={a.config.max_retries ?? ""} placeholder="default" onChange={(e) => cfg("max_retries", e.target.value === "" ? undefined : +e.target.value)} /></Field>
+            <Field label="Parallel tasks"><Input type="number" min="1" max="4" value={a.config.max_parallel ?? 1} onChange={(e) => cfg("max_parallel", +e.target.value)} /></Field>
+            <Field label="Memory"><Select value={a.config.memory ?? "team"} onChange={(e) => cfg("memory", e.target.value)}>
+              <option value="team">Team + project</option><option value="project">Project only</option><option value="none">Task only</option></Select></Field>
+            <Field label="Workspace access"><Select value={a.config.workspace_access ?? "project"} onChange={(e) => cfg("workspace_access", e.target.value)}>
+              <option value="project">Project (isolated)</option><option value="readonly">Read-only</option></Select></Field>
+          </div>
+          <Field label="Reporting format"><Input value={a.config.report_format ?? ""} placeholder="e.g. Summary, Files changed, Tests run, Risks" onChange={(e) => cfg("report_format", e.target.value)} /></Field>
+          <Field label="Tool permissions">
+            <div className="grid grid-cols-2 gap-1.5 mt-0.5">
+              {Object.entries(PERMISSIONS).map(([k, label]) => (
+                <label key={k} className="flex items-center gap-2 text-sm">
+                  <Toggle checked={a.tools.includes(k)} label={label} onChange={(v) => set({ tools: v ? [...a.tools, k] : a.tools.filter((t) => t !== k) })} />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </Field>
         </div>
-      </Field>
-      <div className="flex justify-end"><Button variant="primary" onClick={save} busy={busy === "save"}>Save changes</Button></div>
+      </details>
+      <div className="flex justify-end"><Button variant="primary" disabled={!a.name.trim() || !a.role.trim()} onClick={save} busy={busy === "save"}>Save changes</Button></div>
     </div>
   );
 }
@@ -122,10 +127,12 @@ function AgentInspector({ id }: { id: string }) {
           ? <Button size="sm" icon={<Play size={13} />} onClick={() => run("r", () => api(`/agents/${id}/resume`, { body: {} })).then(reload)}>Resume</Button>
           : <Button size="sm" icon={<Pause size={13} />} onClick={() => run("p", () => api(`/agents/${id}/pause`, { body: {} }), "Agent paused; current step finishes first").then(reload)}>Pause</Button>}
         <Button size="sm" icon={<Square size={12} />} disabled={!a.current_task} onClick={() => run("c", () => api(`/agents/${id}/cancel`, { body: {} }), "Cancelled")}>Cancel task</Button>
-        <Button size="sm" icon={<Copy size={13} />} onClick={() => run("cl", () => api(`/agents/${id}/clone`, { body: {} }), "Agent cloned")}>Clone</Button>
-        <Button size="sm" onClick={() => setMoving(true)}>Move…</Button>
-        <Button size="sm" onClick={() => run("ps", () => api("/presets", { body: { agent_id: id } }), "Saved as preset")}>Save preset</Button>
-        <Button size="sm" variant="danger" icon={<Trash2 size={13} />} onClick={() => confirm(`Delete ${a.name}?`) && run("d", () => api(`/agents/${id}`, { method: "DELETE" }), "Agent deleted").then(() => select(null))}>Delete</Button>
+        <Menu trigger={<Button size="sm" icon={<MoreHorizontal size={14} />}>More</Button>} items={[
+          { label: "Duplicate", disabled: busy !== null, onClick: () => { void run("cl", () => api(`/agents/${id}/clone`, { body: {} }), "Agent duplicated"); } },
+          { label: "Move to team…", onClick: () => setMoving(true) },
+          { label: "Save as preset", disabled: busy !== null, onClick: () => { void run("ps", () => api("/presets", { body: { agent_id: id } }), "Saved as preset"); } },
+          { label: "Delete agent", danger: true, disabled: busy !== null, onClick: async () => { if (!confirm(`Delete ${a.name}?`)) return; const result = await run("d", () => api(`/agents/${id}`, { method: "DELETE" }), "Agent deleted"); if (result) select(null); } },
+        ]} />
       </div>
       <Section title="Now">
         <KV k="Model" v={a.model ? <span className="font-mono text-xs">{a.model}</span> : <span className="text-warn">No model assigned</span>} />
