@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Starfield } from "../components/Starfield";
 import { ChevronDown, Download, FolderPlus, Folder, GitBranch, Laptop, GitFork, X } from "lucide-react";
 import { api, pickFolder, Project, useApi } from "../api";
 import { useStore } from "../store";
@@ -59,8 +60,9 @@ export function WorkHome({ pinnedProjectId }: { pinnedProjectId?: string }) {
 
   const row = "w-full h-11 px-3.5 flex items-center gap-3 text-sm text-ink text-left";
   return (
-    <div className="h-full min-h-[520px] flex flex-col">
-      <div className="flex-1 flex flex-col items-center justify-center py-10">
+    <div className="relative h-full min-h-[520px] flex flex-col">
+      <Starfield />
+      <div className="relative flex-1 flex flex-col items-center justify-center py-10">
         <div className="w-full max-w-[440px] space-y-3">
           <div className="text-center mb-6">
             <h1 className="text-2xl font-semibold text-ink">{pinnedProjectId && project ? project.name : "New session"}</h1>
@@ -104,7 +106,7 @@ export function WorkHome({ pinnedProjectId }: { pinnedProjectId?: string }) {
             </button>)}
         </div>
       </div>
-      <div className="mx-auto w-full max-w-[860px]">
+      <div className="relative mx-auto w-full max-w-[860px]">
         <Composer cfg={full} setCfg={setCfg} onSend={send} busy={false} onStop={() => {}} seed={seed} />
         <div className="mt-2 px-2 flex items-center gap-4 text-sm text-ink-3">
           <span className="flex items-center gap-1.5"><Laptop size={13} />This Mac</span>

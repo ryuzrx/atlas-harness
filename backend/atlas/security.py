@@ -62,15 +62,26 @@ DESTRUCTIVE_PATTERNS = [
 ]
 
 
-def classify_command(cmd: str, policy: str, allowlist: List[str]) -> Tuple[str, str]:
+# Auto-approve still stops for these: they delete data, rewrite history, publish, or change permissions.
+# Everyday build commands (npm install, pip install, mv, test runners...) are approved automatically.
+CRITICAL_PATTERNS = [
+    r"\brm\s", r"\bgit\s+(push|reset\s+--hard|clean|checkout\s+--|rebase|branch\s+-D|stash\s+drop)",
+    r"\bcurl\b.*\|\s*(sh|bash|zsh)", r"\bwget\b.*\|\s*(sh|bash)", r"\bnpm\s+publish\b",
+    r">\s*/", r"\bchmod\b", r"\bchown\b", r"\bkill(all)?\b",
+]
+
+
+def classify_command(cmd: str, policy: str, allowlist: List[str], auto_approve: bool = False) -> Tuple[str, str]:
     """Return (decision, reason). decision in {'deny','ask','allow'}."""
     stripped = cmd.strip()
     for pat in DENY_PATTERNS:
         if re.search(pat, stripped):
             return "deny", f"Command matches a blocked pattern ({pat})."
-    for pat in DESTRUCTIVE_PATTERNS:
+    for pat in (CRITICAL_PATTERNS if auto_approve else DESTRUCTIVE_PATTERNS):
         if re.search(pat, stripped):
             return "ask", "Potentially destructive command requires confirmation."
+    if auto_approve:
+        return "allow", "Auto-approve is on for this chat."
     if policy == "auto":
         return "allow", "Auto policy."
     # allowlisted only when every pipeline segment starts with an allowlisted prefix

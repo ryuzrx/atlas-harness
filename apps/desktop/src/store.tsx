@@ -51,15 +51,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [activeWorkspace, setWS] = useState(() => localStorage.getItem("atlas_ws") || "Default");
   const { data: settings, setData } = useApi<Record<string, any>>("/settings", ["settings"]);
 
-  const routeMode: Mode | null = route.name === "chat" || route.name === "overview" ? "chat" : route.name === "projects" ? "work" : null;
+  const { data: convList } = useApi<{ id: string; config?: Record<string, any> }[]>("/conversations", ["conversation"]);
   const [lastMode, setLastMode] = useState<Mode>(() => (localStorage.getItem("atlas_mode") === "work" ? "work" : "chat"));
+  // A chat that belongs to a project is part of Work: opening it must not flip the sidebar to Chat.
+  const openChat = route.name === "chat" && route.id ? convList?.find((c) => c.id === route.id) : undefined;
+  const isProjectChat = !!openChat?.config?.project_id;
+  const routeMode: Mode | null = route.name === "chat"
+    ? (route.id && !openChat ? lastMode : isProjectChat ? "work" : "chat")
+    : route.name === "overview" ? "chat" : route.name === "projects" ? "work" : null;
   const mode: Mode = routeMode || lastMode;
   useEffect(() => {
     if (routeMode) { setLastMode(routeMode); localStorage.setItem("atlas_mode", routeMode); }
     // remember where each mode was so switching back returns there
-    if (route.name === "chat") { if (route.id) localStorage.setItem("atlas_last_chat", route.id); else localStorage.removeItem("atlas_last_chat"); }
+    if (route.name === "chat") {
+      if (!route.id) localStorage.removeItem("atlas_last_chat");
+      else if (openChat && !isProjectChat) localStorage.setItem("atlas_last_chat", route.id);
+      else if (isProjectChat) localStorage.setItem("atlas_last_project_chat", route.id);
+    }
     if (route.name === "projects" && route.id) localStorage.setItem("atlas_last_project", route.id);
-  }, [route.name, route.id]);
+  }, [route.name, route.id, routeMode, isProjectChat]);
   // optional launch view: open Chat or Work instead of wherever you left off (never overrides a deep link)
   const launched = useRef(!!parseHash());
   useEffect(() => {
@@ -111,8 +121,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       for (const [token, value] of Object.entries(paletteTokens(palette.roles, mode, { neutralPrimary: true }))) root.style.setProperty(token, value);
       root.style.setProperty("--chat-font", ({ small: "13px", large: "16px" } as Record<string, string>)[settings?.["chat.font_size"]] || "14px");
       document.documentElement.classList.toggle("reduce-motion", !!settings?.["general.reduce_motion"]);
-      const scale = Number(settings?.["general.ui_scale"]) || 1;   // interface size: scales the whole UI
-      (document.documentElement.style as any).zoom = String(Math.min(1.3, Math.max(0.8, scale)));
+      const scale = Number(settings?.["general.ui_scale"]) || 1;
+      const clamped = Math.min(1.3, Math.max(0.8, scale));
+      const bridge = (window as any).webkit?.messageHandlers?.atlas;
+      const rgb = getComputedStyle(document.body).backgroundColor.match(/\d+(\.\d+)?/g);
+      if (bridge && rgb && rgb.length >= 3) bridge.postMessage({ type: "chrome", color: rgb.slice(0, 3).map(Number) });
+      // In the Mac app, scale natively (WKWebView page zoom): every length, vh unit and fixed
+      // layer scales together. CSS zoom is only the fallback for the plain browser build.
+      if (bridge) { bridge.postMessage({ type: "pageZoom", value: clamped }); root.style.removeProperty("zoom"); }
+      else (root.style as any).zoom = String(clamped);
     };
     apply();
     const mq = matchMedia("(prefers-color-scheme: dark)");

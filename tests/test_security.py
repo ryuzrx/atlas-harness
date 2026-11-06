@@ -62,3 +62,12 @@ def test_sandbox_blocks_writes_outside(tmp_path):
     subprocess.run(argv, cwd=ws, capture_output=True)
     assert (ws / "inside.txt").exists()
     assert not outside.exists()
+
+
+def test_auto_approve_allows_build_commands_but_still_asks_for_critical_ones():
+    assert classify_command("npm install", "ask", [], auto_approve=True)[0] == "allow"
+    assert classify_command("pip install requests && pytest", "ask", [], auto_approve=True)[0] == "allow"
+    assert classify_command("npm install", "ask", [])[0] == "ask"
+    assert classify_command("rm build.txt", "ask", [], auto_approve=True)[0] == "ask"
+    assert classify_command("git push origin main", "ask", [], auto_approve=True)[0] == "ask"
+    assert classify_command("sudo rm -rf /", "ask", [], auto_approve=True)[0] == "deny"

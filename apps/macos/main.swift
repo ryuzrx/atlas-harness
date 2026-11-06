@@ -20,9 +20,10 @@ final class DragWebView: WKWebView {
     override var mouseDownCanMoveWindow: Bool { false }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
     var window: NSWindow!
     var webView: DragWebView!
+    var effectView: NSView!
     var backend: Process?
     var port: Int = 0
     let token: String = {
@@ -63,6 +64,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         window = NSWindow(contentRect: frame, styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                           backing: .buffered, defer: false)
         window.title = "Atlas"
+        window.delegate = self
+        window.collectionBehavior.insert(.fullScreenPrimary)
+        window.backgroundColor = .windowBackgroundColor
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.minSize = NSSize(width: 960, height: 620)
@@ -70,12 +74,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         if !window.setFrameUsingName("ATLASMainWindow") { window.center() }
         window.isMovableByWindowBackground = false
 
-        let effect = NSVisualEffectView(frame: frame)
-        effect.material = .sidebar
-        effect.blendingMode = .behindWindow
-        effect.state = .followsWindowActiveState
-        effect.autoresizingMask = [.width, .height]
-        window.contentView = effect
+        // Solid, layer-backed root so a fast resize never exposes a grey system material while the
+        // web view catches up. The page reports its real background colour (see "chrome" below).
+        effectView = NSView(frame: frame)
+        effectView.wantsLayer = true
+        effectView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        effectView.autoresizingMask = [.width, .height]
+        window.contentView = effectView
 
         let config = WKWebViewConfiguration()
         let ucc = WKUserContentController()
@@ -93,12 +98,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         ucc.addUserScript(WKUserScript(source: js, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         config.userContentController = ucc
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
-        webView = DragWebView(frame: frame, configuration: config)
-        webView.autoresizingMask = [.width, .height]
+        webView = DragWebView(frame: .zero, configuration: config)
+        webView.translatesAutoresizingMaskIntoConstraints = false
         webView.setValue(false, forKey: "drawsBackground")
         webView.navigationDelegate = self
         webView.uiDelegate = self
-        effect.addSubview(webView)
+        effectView.addSubview(webView)
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: effectView.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: effectView.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: effectView.bottomAnchor),
+        ])
         webView.loadHTMLString(statusPage("Starting Atlas…", detail: "Preparing your workspace."), baseURL: nil)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -225,6 +236,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             if let e = webView.lastMouseDown { window.performDrag(with: e) }
         case "zoom":
             window.zoom(nil)
+        case "chrome":
+            if let c = body["color"] as? [Double], c.count == 3 {
+                let color = NSColor(srgbRed: c[0] / 255, green: c[1] / 255, blue: c[2] / 255, alpha: 1)
+                window.backgroundColor = color
+                effectView.layer?.backgroundColor = color.cgColor
+                webView.underPageBackgroundColor = color
+            }
+        case "pageZoom":
+            if let value = body["value"] as? Double, value >= 0.5, value <= 2 { webView.pageZoom = CGFloat(value) }
         case "pickFolder":
             let panel = NSOpenPanel()
             panel.canChooseDirectories = true

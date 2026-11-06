@@ -42,7 +42,7 @@
   --neu-lo: rgba(11, 13, 18, 0.12);
   --ring: rgba(63, 106, 168, 0.26);
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
-  --spring: cubic-bezier(0.4, 0, 0.2, 1);
+  --spring: cubic-bezier(0.22, 1, 0.36, 1);   /* critically damped feel: fast start, soft settle */
   --dur-fast: 100ms;
   --dur: 200ms;
   --dur-slow: 300ms;
@@ -85,7 +85,7 @@
   --neu-lo: rgba(0, 0, 0, 0.6);
   --ring: rgba(127, 162, 214, 0.35);
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
-  --spring: cubic-bezier(0.4, 0, 0.2, 1);
+  --spring: cubic-bezier(0.22, 1, 0.36, 1);   /* critically damped feel: fast start, soft settle */
   --dur-fast: 100ms;
   --dur: 200ms;
   --dur-slow: 300ms;
@@ -138,7 +138,10 @@
 }
 
 html, body, #root { height: 100%; }
-#root { color: var(--text); }
+#root {
+  color: var(--text);
+  background: var(--base);
+}
 [data-theme="dark"] #root { color: #f5f5f7 !important; }
 [data-theme="dark"] #root .text-ink,
 [data-theme="dark"] #root button.neu-btn.text-ink { color: #f5f5f7 !important; }
@@ -150,7 +153,7 @@ html, body, #root { height: 100%; }
 [data-theme="dark"] #root .chat-menu-row .chat-menu-hint { color: #a1a1a6 !important; }
 body {
   margin: 0;
-  background: transparent;
+  background: var(--base);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 14px;
@@ -169,7 +172,13 @@ input, textarea, select, [contenteditable], .selectable, pre, code { user-select
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; border-radius: 7px; }
 button { cursor: default; transition-property: background-color, color, border-color, box-shadow, opacity; transition-duration: 120ms; transition-timing-function: var(--ease); }
-button:active:not(:disabled) { opacity: 0.88; transition-duration: 60ms; }
+button { transition-property: background-color, color, border-color, box-shadow, opacity, scale; }
+/* press feedback on pointer-down (Apple: respond instantly); `scale` leaves Tailwind transforms alone */
+button:active:not(:disabled):not([role="tab"]):not([role="menuitem"]):not([role="menuitemcheckbox"]) { scale: 0.97; opacity: 0.9; transition-duration: 80ms; }
+.starfield { opacity: 0; transition: opacity 600ms var(--ease); }
+[data-theme="dark"] .starfield { opacity: 0.85; }
+[data-theme="dark"] .starfield { -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 30%, transparent 100%); mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 30%, transparent 100%); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; } }
 ::selection { background: var(--accent-bg); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: transparent; border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
@@ -178,7 +187,7 @@ button:active:not(:disabled) { opacity: 0.88; transition-duration: 60ms; }
 .row-cv { content-visibility: auto; contain-intrinsic-size: auto 40px; }
 .fade-in { animation: fade 180ms var(--ease); }
 @keyframes fade { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
-.pop-in { animation: pop 160ms var(--ease); }
+.pop-in { animation: pop 220ms var(--spring); transform-origin: var(--origin, top); }
 @keyframes pop { from { opacity: 0; transform: scale(0.99) translateY(-2px); } to { opacity: 1; transform: none; } }
 .pulse-dot { animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.35; } }
@@ -239,23 +248,23 @@ table thead th { font-weight: 500; font-size: 11.5px; }
 .composer-input:focus-visible, .composer-input:focus { outline: none; }
 
 /* ---- motion: short, decelerating, meaningful; all disabled by reduced-motion ---- */
-@keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes popin { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
-.anim-rise { animation: rise 200ms var(--ease) both; }
+.anim-rise { animation: rise 320ms var(--spring) both; }
 /* a row with an open menu must paint above the rows after it (animation makes each row its own stacking context) */
 .anim-rise:has([role="menu"]), .stagger > *:has([role="menu"]) { position: relative; z-index: 30; }
 .anim-pop { animation: popin 160ms var(--ease) both; }
-.stagger > * { animation: rise 240ms var(--ease) both; }
-.stagger > *:nth-child(2) { animation-delay: 30ms; }
-.stagger > *:nth-child(3) { animation-delay: 60ms; }
-.stagger > *:nth-child(4) { animation-delay: 90ms; }
+.stagger > * { animation: rise 420ms var(--spring) both; }
+.stagger > *:nth-child(2) { animation-delay: 50ms; }
+.stagger > *:nth-child(3) { animation-delay: 100ms; }
+.stagger > *:nth-child(4) { animation-delay: 150ms; }
 /* height-animated disclosure without measuring: grid rows 0fr -> 1fr */
 .disclose { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 200ms var(--ease), opacity 160ms var(--ease); }
 .disclose.open { grid-template-rows: 1fr; opacity: 1; }
 .disclose > * { min-height: 0; overflow: hidden; }
 .nav-indicator { transition: transform 240ms var(--ease), height 240ms var(--ease), opacity 120ms var(--ease); }
 .modal-backdrop { animation: fadeonly 160ms var(--ease) both; }
-.modal-panel { animation: modal-panel 200ms var(--ease) both; }
+.modal-panel { animation: modal-panel 280ms var(--spring) both; }
 @keyframes modal-panel { from { opacity: 0; transform: translateY(6px) scale(0.99); } to { opacity: 1; transform: none; } }
 @keyframes fadeonly { from { opacity: 0; } to { opacity: 1; } }
 

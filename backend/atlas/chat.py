@@ -132,6 +132,10 @@ class ChatService:
         access_level = cfg.get("access_level") if cfg.get("access_level") in ("read_only", "workspace", "computer_use") else "workspace"
         if access_level == "read_only" and mode == "model" and not tools:
             tools = ["read"]
+        # A project (Work) chat is a workspace session, not a plain Q&A stream: without file/terminal
+        # tools the model can only print shell commands for the user to run. Give it the project tools.
+        if mode == "model" and cfg.get("project_id") and "project" in tools and not any(g in AGENT_TOOL_GROUPS for g in tools):
+            tools = tools + (["read"] if access_level == "read_only" else ["read", "write", "shell", "git"])
         if mode == "team" and access_level == "computer_use":
             raise ChatError("Atlas Computer Use is not available for team chats.")
 
@@ -154,7 +158,8 @@ class ChatService:
                                               cfg.get("project_id"), _title_from(content or "Objective"),
                                               config={"access_level": access_level, "tool_limit": tools or None,
                                                       "conversation_id": cid,
-                                                      "computer_consent_for": cfg.get("computer_consent_for")})
+                                                      "computer_consent_for": cfg.get("computer_consent_for"),
+                                               "auto_approve": bool(cfg.get("auto_approve"))})
             label = {"mode": "team", "team_id": cfg["team_id"]}
         elif mode == "agent" or any(g in AGENT_TOOL_GROUPS for g in tools) or access_level == "computer_use":
             if mode == "agent":
@@ -168,7 +173,8 @@ class ChatService:
                 "agent_id": agent["id"], "team_id": agent.get("team_id"), "project_id": cfg.get("project_id"),
                 "kind": "code", "config": {"tool_limit": tools or None, "access_level": access_level,
                                                "conversation_id": cid,
-                                               "computer_consent_for": cfg.get("computer_consent_for")}})
+                                               "computer_consent_for": cfg.get("computer_consent_for"),
+                                               "auto_approve": bool(cfg.get("auto_approve"))}})
             label = {"mode": "agent", "agent_id": agent["id"], "agent_name": agent["name"]}
         else:
             task = None

@@ -88,3 +88,18 @@ def test_model_with_tools_runs_as_agent_and_tool_limit_is_enforced(repo):
         wait_msg(c, conv["id"], timeout=30)
         agents = [a for a in c.get("/api/agents", headers=H).json() if a["name"] == "Atlas Assistant"]
         assert len(agents) == 1
+
+
+def test_project_chat_with_only_project_context_gets_workspace_tools(repo):
+    """Work-sidebar chats send tools=["project"]; that must still run as an agent, not plain streaming."""
+    script = {"General assistant": [("finish", {"summary": "ok"})]}
+    with client(script) as c:
+        prov = c.post("/api/providers", json={"kind": "scripted", "name": "Scripted"}, headers=H).json()
+        proj = c.post("/api/projects", json={"path": str(repo)}, headers=H).json()
+        conv = c.post("/api/conversations", json={}, headers=H).json()
+        cfg = {"mode": "model", "provider_id": prov["id"], "model": "scripted", "tools": ["project"], "project_id": proj["id"]}
+        out = c.post(f"/api/conversations/{conv['id']}/messages", json={"content": "Build it", "config": cfg}, headers=H).json()
+        assert out["assistant"]["task_id"]
+        wait_msg(c, conv["id"], timeout=30)
+        task = c.get(f"/api/tasks/{out['assistant']['task_id']}", headers=H).json()
+        assert set(task["config"]["tool_limit"]) >= {"read", "write", "shell", "git"}

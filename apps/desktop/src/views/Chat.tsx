@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp, Square, Plus, Box, Wrench, ChevronDown, Check, X, FileText, Users, Bot, ChevronRight,
-  Copy, AlertCircle, Terminal, SlidersHorizontal, ExternalLink, Loader2, Code2, Layers, Sparkles, PanelRight, Cpu,
+  Copy, AlertCircle, Terminal, SlidersHorizontal, ExternalLink, Loader2, Code2, Layers, Sparkles, PanelRight, Cpu, ShieldCheck,
 } from "lucide-react";
 import { Agent, api, Approval, Model, Project, Provider, subscribe, Task, Team, useApi } from "../api";
 import { BrandMark, brandFor } from "../components/Brand";
@@ -14,12 +14,14 @@ import { AtlasMark } from "../components/Logo";
 import { AnimatedMark } from "../components/AnimatedMark";
 import { Markdown } from "../components/Markdown";
 import { ExecutionViewer } from "../components/Execution";
+import { RunTimeline, summarizeSteps, useRunSteps } from "../components/RunTimeline";
+import { Starfield } from "../components/Starfield";
 
 // ---------------------------------------------------------------- types & config
 export interface ChatConfig {
   mode?: "model" | "agent" | "team"; provider_id?: string; model?: string; agent_id?: string; team_id?: string;
   tools?: string[]; project_id?: string; access_level?: "read_only" | "workspace" | "computer_use";
-  computer_consent_for?: string; system?: string; temperature?: number | null;
+  computer_consent_for?: string; system?: string; temperature?: number | null; auto_approve?: boolean;
 }
 interface ChatMessage {
   id: string; conversation_id: string; role: "user" | "assistant"; content: string;
@@ -86,7 +88,7 @@ function Chip({ icon, label, onClick, open, disabled, title, iconBox }: {
 }) {
   return (
     <button onClick={onClick} disabled={disabled} title={title} aria-haspopup="menu" aria-expanded={open}
-      className={cx("h-8 rounded-full flex items-center text-sm text-ink-2 hover:text-ink no-drag disabled:opacity-50",
+      className={cx("h-8 min-w-0 shrink rounded-full flex items-center text-sm text-ink-2 hover:text-ink no-drag disabled:opacity-50",
         iconBox ? "max-w-[250px] pl-1 pr-2.5 gap-1.5" : "max-w-[220px] px-2.5 gap-1.5",
         open ? "bg-active text-ink" : "hover:bg-hover")}>
       <span className={cx("shrink-0 flex items-center justify-center", iconBox && "h-6 w-6 rounded-full bg-hover text-ink")}>{icon}</span>
@@ -340,7 +342,8 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
           if (modSends ? (e.metaKey || e.ctrlKey) : !(e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); }
         }}
         className={cx("composer-input w-full resize-none bg-transparent outline-none text-lg leading-6 text-ink placeholder:text-ink-3", big ? "min-h-[48px]" : "min-h-[28px]")} />
-      <div className="flex items-center gap-1 mt-2 -mx-1.5">
+      <div className="flex items-end gap-1 mt-2 -mx-1.5">
+        <div className="flex-1 min-w-0 flex flex-wrap items-center gap-x-1 gap-y-1">
         <input ref={file} type="file" multiple hidden onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
         <button onClick={() => file.current?.click()} aria-label="Attach files" title="Attach text files or images"
           className="h-8 w-8 rounded-full flex items-center justify-center text-ink-2 hover:text-ink hover:bg-hover shrink-0"><Plus size={18} strokeWidth={1.6} /></button>
@@ -348,7 +351,11 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
         <ModelMenu cfg={cfg} set={setCfg} h={h} />
         <AccessMenu cfg={cfg} set={setCfg} h={h} />
         <ToolsMenu cfg={cfg} set={setCfg} h={h} groups={meta?.permission_groups || {}} />
-        <div className="flex-1" />
+        <button onClick={() => setCfg({ auto_approve: !cfg.auto_approve })} aria-pressed={!!cfg.auto_approve} disabled={cfg.access_level === "read_only"}
+          title={cfg.auto_approve ? "Auto-approve is on: commands run without asking. Deleting files, git push and other risky commands still ask." : "Ask before running commands. Turn on to auto-approve everyday commands."}
+          className={cx("h-8 shrink-0 rounded-full flex items-center gap-1.5 px-2.5 text-sm no-drag disabled:opacity-40", cfg.auto_approve ? "bg-active text-ink" : "text-ink-2 hover:text-ink hover:bg-hover")}>
+          <ShieldCheck size={15} strokeWidth={1.6} /><span>{cfg.auto_approve ? "Auto-approve" : "Ask first"}</span></button>
+        </div>
         {busy ? (
           <button onClick={onStop} aria-label="Stop" title="Stop  ⌘."
             className="h-8 w-8 rounded-full bg-ink text-[var(--base)] flex items-center justify-center hover:opacity-90 shrink-0"><Square size={13} fill="currentColor" /></button>
@@ -433,6 +440,7 @@ function RunPanel({ taskId }: { taskId: string }) {
   const [seen, setSeen] = useState(false);
   useEffect(() => { if (open) setSeen(true); }, [open]);
   const { run } = useAction();
+  const { steps } = useRunSteps(t && t.kind !== "objective" ? taskId : undefined);
   if (!t) return <div className="h-11 rounded-lg border border-line bg-surface animate-pulse" />;
   const ids = new Set([t.id, ...(t.children || []).map((c) => c.id)]);
   const pending = approvals.filter((a) => ids.has(a.task_id));
@@ -447,7 +455,7 @@ function RunPanel({ taskId }: { taskId: string }) {
           <ChevronRight size={14} className={cx("text-ink-3 transition-transform duration-150 shrink-0", open && "rotate-90")} />
           {isTeam ? <Users size={15} strokeWidth={1.6} className="text-ink-2 shrink-0" /> : <Bot size={15} strokeWidth={1.6} className="text-ink-2 shrink-0" />}
           <span className="text-sm text-ink font-medium shrink-0">{isTeam ? t.team_name || "Team" : t.agent_name || "Agent"}</span>
-          <span className="text-sm text-ink-2 truncate">{isTeam && kids.length ? `${done}/${kids.length} tasks` : t.title}</span>
+          <span className="text-sm text-ink-2 truncate">{isTeam && kids.length ? `${done}/${kids.length} tasks` : !isTeam && !live && steps.length ? summarizeSteps(steps) : t.title}</span>
           {t.config?.access_level === "computer_use" && <span className="shrink-0 rounded-full bg-hover px-2 py-0.5 text-[10px] text-ink-2">Atlas Computer Use</span>}
           {live && <AnimatedMark size={16} play="shimmer" className="shrink-0" />}
         </button>
@@ -459,13 +467,15 @@ function RunPanel({ taskId }: { taskId: string }) {
       </div>
       {pending.length > 0 && <div className="px-3 pb-3 space-y-2">{pending.map((a) => <ApprovalCard key={a.id} a={a} />)}</div>}
       {t.error && !open && <div className="px-3 pb-3 -mt-1 text-xs text-bad truncate">{t.error}</div>}
+      {!isTeam && live && !open && <div className="border-t border-line"><RunTimeline taskId={t.id} live /></div>}
+      {!isTeam && open && <div className="border-t border-line"><RunTimeline taskId={t.id} live={live} /></div>}
       <div className={cx("disclose", open && "open")}><div>{(open || seen) && (
         <div className="border-t border-line">
           {isTeam ? (
             kids.length ? kids.map((k) => <SubRun key={k.id} t={k} />) :
               <div className="px-3 py-3 text-sm text-ink-3">{t.status === "planning" ? "The lead is planning the work…" : "No tasks yet."}</div>
           ) : (
-            <div className="p-3"><div className="rounded-md border border-line overflow-hidden"><ExecutionViewer taskId={t.id} height={300} showFilters={false} /></div></div>
+            <div className="p-3"><div className="mb-1.5 text-xs text-ink-3">Raw log</div><div className="rounded-md border border-line overflow-hidden"><ExecutionViewer taskId={t.id} height={300} showFilters={false} /></div></div>
           )}
         </div>
       )}</div></div>
@@ -558,7 +568,7 @@ function SettingsPopover({ cfg, set, open, onClose }: { cfg: ChatConfig; set: (p
 
 function ActivityDrawer({ onClose }: { onClose: () => void }) {
   return (
-    <aside className="anim-rise w-[400px] max-[1000px]:absolute max-[1000px]:right-0 max-[1000px]:top-0 max-[1000px]:bottom-0 max-[1000px]:z-30 shrink-0 h-full border-l border-line bg-[var(--sidebar)] flex flex-col fade-in">
+    <aside className="anim-rise w-[380px] max-[1000px]:w-[320px] shrink-0 h-full border-l border-line bg-[var(--sidebar)] flex flex-col fade-in">
       <div className="drag h-[64px] shrink-0 flex items-center justify-between pl-4 pr-3 pt-2">
         <span className="text-base font-medium text-ink">Live activity</span>
         <button onClick={onClose} aria-label="Close activity" className="no-drag h-8 w-8 rounded-md flex items-center justify-center text-ink-2 hover:text-ink hover:bg-hover"><X size={16} /></button>
@@ -579,7 +589,9 @@ function ChatInner({ id }: { id?: string }) {
   const { providers: chatProviders } = useHarnessData();
   const wide = settings?.["chat.width"] === "wide";
   const toast = useToast();
-  const { data: conv, error, setData } = useApi<ConversationFull>(id ? `/conversations/${id}` : null, ["conversation"]);
+  const { data: loadedConv, error, setData } = useApi<ConversationFull>(id ? `/conversations/${id}` : null, ["conversation"]);
+  // useApi keeps the previous chat's data until the new one arrives; never show chat A under chat B's id.
+  const conv = loadedConv && loadedConv.id === id ? loadedConv : undefined;
   const [draft, setDraft] = useState<ChatConfig>(loadDraft);
   const [live, setLive] = useState<Record<string, string>>({});
   const [drawer, setDrawer] = useState(() => localStorage.getItem("atlas_activity") === "1");
@@ -665,9 +677,12 @@ function ChatInner({ id }: { id?: string }) {
             <div className="text-lg text-ink">This chat no longer exists.</div>
             <button onClick={() => go({ name: "chat" })} className="h-8 px-3 rounded-md border border-line text-sm text-ink hover:bg-hover">Start a new chat</button>
           </div>
+        ) : id && !conv ? (
+          <div className="flex-1" aria-busy="true" />
         ) : empty ? (
-          <div className="flex-1 overflow-y-auto">
-            <div className="stagger min-h-full flex flex-col items-center justify-center px-8 pb-[8vh]">
+          <div className="relative flex-1 overflow-y-auto">
+            <Starfield />
+            <div className="stagger relative min-h-full flex flex-col items-center justify-center px-8 pb-[8vh]">
               <AtlasMark size={40} className="text-ink" />
               <h1 className="mt-5 text-2xl font-semibold text-ink">How can I help you today?</h1>
               <div className="mt-8 w-full max-w-[760px]">

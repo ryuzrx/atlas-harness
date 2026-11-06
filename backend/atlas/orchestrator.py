@@ -814,7 +814,14 @@ depends on the work it checks; no cycles."""
         return "\n\n".join(p for p in parts if p)
 
     async def _run_native(self, task, agent, prompt, system, workspace, perms, settings, emit) -> Dict[str, Any]:
+        auto_approve = bool((task.get("config") or {}).get("auto_approve"))
+        if auto_approve:
+            settings = {**settings, "_auto_approve": True}
+
         async def request_approval(kind, payload):
+            # Auto-approve covers commit/connector prompts too; risky commands still ask via classify_command.
+            if auto_approve and kind in ("git_commit", "mcp"):
+                return True
             return await self._approval(task, agent, kind, payload)
 
         async def ask_user(question, choices):

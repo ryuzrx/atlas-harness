@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { MessageSquare, FolderKanban, FolderPlus, Folder, FolderGit2, Sparkles, Layers, Play, SquarePlus, Plus, Search, Settings, MoreHorizontal, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { MessageSquare, FolderKanban, FolderPlus, Folder, FolderGit2, Sparkles, Layers, Play, SquarePlus, Plus, Search, Settings, MoreHorizontal, PanelLeftClose, PanelLeftOpen, ChevronRight, ChevronsUpDown, X } from "lucide-react";
 import { api, Project, useApi } from "../api";
 import { useAddProject } from "./useAddProject";
 import { Mode, RouteName, useStore } from "../store";
@@ -87,7 +87,9 @@ function ChatHistory() {
   const [searching, setSearching] = useState(false);
   const [debounced, setDebounced] = useState("");
   useEffect(() => { const t = setTimeout(() => setDebounced(q), 180); return () => clearTimeout(t); }, [q]);
-  const { data: convs = [], loading } = useApi<Conversation[]>(`/conversations${debounced ? `?q=${encodeURIComponent(debounced)}` : ""}`, ["conversation"]);
+  const { data: allConvs = [], loading } = useApi<Conversation[]>(`/conversations${debounced ? `?q=${encodeURIComponent(debounced)}` : ""}`, ["conversation"]);
+  // Project chats live under their project in the Work sidebar, not in general Chat history.
+  const convs = useMemo(() => allConvs.filter((c) => !c.config?.project_id), [allConvs]);
   // drop the remembered chat if it no longer exists, so the Chat tab never reopens a deleted conversation
   useEffect(() => {
     const last = localStorage.getItem("atlas_last_chat");
@@ -170,24 +172,55 @@ function ModeSwitch({ collapsed }: { collapsed: boolean }) {
   );
 }
 
+const GROUPS_KEY = "atlas_project_groups";
+const CHAT_PREVIEW = 6;
+
 function ProjectList() {
   const { route, go, settings } = useStore();
   const { add, adding } = useAddProject();
   const { data: list = [], loading } = useApi<Project[]>("/projects", ["project"]);
   const { data: conversations = [] } = useApi<Conversation[]>("/conversations", ["conversation"]);
   const { busy, run } = useAction();
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem(GROUPS_KEY) || "{}"); } catch { return {}; }
+  });
+  const [showAll, setShowAll] = useState<Record<string, boolean>>({});
+  useEffect(() => { try { localStorage.setItem(GROUPS_KEY, JSON.stringify(expanded)); } catch { /* storage unavailable */ } }, [expanded]);
   const projects = useMemo(() => settings?.["projects.sort"] === "added" ? list : [...list].sort((a, b) => a.name.localeCompare(b.name)), [list, settings]);
+  const chatsByProject = useMemo(() => {
+    const map: Record<string, Conversation[]> = {};
+    for (const c of conversations) {
+      const id = c.config?.project_id;
+      if (id) (map[id] ||= []).push(c);
+    }
+    for (const id of Object.keys(map)) map[id].sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
+    return map;
+  }, [conversations]);
   const current = route.name === "projects" ? route.id : undefined;
+  const openChatId = route.name === "chat" ? route.id : undefined;
+  // Opening a chat reveals it inside its project group.
+  useEffect(() => {
+    if (!openChatId) return;
+    const project = conversations.find((c) => c.id === openChatId)?.config?.project_id;
+    if (project) setExpanded((value) => value[project] ? value : { ...value, [project]: true });
+  }, [openChatId, conversations]);
+  const withChats = projects.filter((p) => (chatsByProject[p.id] || []).length > 0);
+  const allOpen = withChats.length > 0 && withChats.every((p) => expanded[p.id]);
+  const toggle = (id: string) => setExpanded((value) => ({ ...value, [id]: !value[id] }));
+  const toggleAll = () => setExpanded(Object.fromEntries(projects.map((p) => [p.id, !allOpen])));
   const newChat = (project: Project) => run(`chat:${project.id}`, async () => {
     const draft = loadDraft();
     const config = { ...draft, project_id: project.id, tools: Array.from(new Set([...(draft.tools || []), "project"])) };
     const chat = await api<Conversation>("/conversations", { body: { config } });
+    setExpanded((value) => ({ ...value, [project.id]: true }));
     go({ name: "chat", id: chat.id });
   });
   return (
     <div className="flex flex-col min-h-0 flex-1">
       <div className="flex items-center h-7 pl-2.5 pr-0.5 shrink-0">
-        <span className="flex-1 text-2xs font-semibold text-ink-3">Projects</span>
+        <span className="flex-1 text-2xs font-semibold text-ink-3">Projects{projects.length > 0 && <span className="ml-1.5 font-normal">{projects.length}</span>}</span>
+        {withChats.length > 0 && <button onClick={toggleAll} aria-label={allOpen ? "Collapse all projects" : "Expand all projects"} title={allOpen ? "Collapse all" : "Expand all"}
+          className="h-7 w-7 flex items-center justify-center rounded-sm text-ink-2 hover:text-ink hover:bg-hover no-drag"><ChevronsUpDown size={14} strokeWidth={1.6} /></button>}
         <button onClick={add} disabled={adding} aria-label="Add project" title="Add project"
           className="h-7 w-7 flex items-center justify-center rounded-sm text-ink-2 hover:text-ink hover:bg-hover disabled:opacity-45 no-drag"><FolderPlus size={15} strokeWidth={1.6} /></button>
       </div>
@@ -199,24 +232,38 @@ function ProjectList() {
           {projects.map((p) => {
             const active = p.id === current;
             const Icon = p.is_repo ? FolderGit2 : Folder;
-            const chats = conversations.filter((c) => c.config?.project_id === p.id);
+            const chats = chatsByProject[p.id] || [];
+            const isOpen = !!expanded[p.id];
+            const visible = showAll[p.id] ? chats : chats.slice(0, CHAT_PREVIEW);
+            const creating = busy === `chat:${p.id}`;
             return (
               <section key={p.id} className="min-w-0">
                 <div className={cx("group flex items-center rounded-md", active ? "bg-selected" : "hover:bg-hover")}>
-                  <button onClick={() => go({ name: "projects", id: p.id })} aria-current={active ? "page" : undefined} title={p.path}
-                    className={cx("flex-1 min-w-0 flex items-center gap-2 h-8 px-2.5 rounded-md text-sm text-left no-drag", active ? "text-ink" : "text-ink")}>
+                  <button onClick={() => toggle(p.id)} aria-label={`${isOpen ? "Collapse" : "Expand"} ${p.name}`} aria-expanded={isOpen}
+                    className="h-8 w-6 ml-0.5 shrink-0 flex items-center justify-center rounded-sm text-ink-3 hover:text-ink no-drag"><ChevronRight size={14} className={cx("transition-transform duration-150", isOpen && "rotate-90")} /></button>
+                  <button onClick={() => { go({ name: "projects", id: p.id }); setExpanded((v) => v[p.id] ? v : { ...v, [p.id]: true }); }} aria-current={active ? "page" : undefined} title={p.path}
+                    className="flex-1 min-w-0 flex items-center gap-2 h-8 pr-1.5 rounded-md text-sm text-left text-ink no-drag">
                     <Icon size={15} strokeWidth={1.6} className={cx("shrink-0", !p.exists ? "text-bad" : "text-ink-2")} />
                     <span className="truncate">{p.name}</span>
                   </button>
-                  <button onClick={() => void newChat(p)} disabled={!p.exists || busy === `chat:${p.id}`} aria-label={`New chat in ${p.name}`} title={`New chat in ${p.name}`}
-                    className="h-7 w-7 mr-0.5 shrink-0 flex items-center justify-center rounded-sm text-ink-3 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:text-ink hover:bg-active disabled:opacity-40 no-drag"><Plus size={14} /></button>
+                  {chats.length > 0 && <span className="shrink-0 px-1.5 text-2xs text-ink-3 tabular-nums group-hover:hidden group-focus-within:hidden">{chats.length}</span>}
+                  <button onClick={() => void newChat(p)} disabled={!p.exists || creating} aria-label={`New chat in ${p.name}`} title={`New chat in ${p.name}`}
+                    className="h-7 w-7 mr-0.5 shrink-0 hidden group-hover:flex group-focus-within:flex items-center justify-center rounded-sm text-ink-3 hover:text-ink hover:bg-active disabled:opacity-40 no-drag"><Plus size={14} /></button>
                 </div>
-                {chats.length > 0 ? <div className="ml-[17px] pl-[10px] border-l border-line mt-0.5 mb-1 flex flex-col gap-0.5">
-                  {chats.map((chat) => <button key={chat.id} onClick={() => go({ name: "chat", id: chat.id })} title={chat.title}
-                    aria-current={route.name === "chat" && route.id === chat.id ? "page" : undefined}
-                    className={cx("h-7 min-w-0 px-2 rounded-sm text-left text-xs truncate no-drag", route.name === "chat" && route.id === chat.id ? "bg-selected text-ink" : "text-ink-2 hover:text-ink hover:bg-hover")}>{chat.title}</button>)}
-                </div> : <button onClick={() => void newChat(p)} disabled={!p.exists || busy === `chat:${p.id}`}
-                  className="ml-7 h-6 px-2 rounded-sm text-left text-xs text-ink-3 hover:text-ink hover:bg-hover disabled:opacity-40 no-drag">No chats · Add chat</button>}
+                {isOpen && (
+                  <div className="ml-[23px] pl-[10px] border-l border-line mt-0.5 mb-1 flex flex-col gap-0.5">
+                    {visible.map((chat) => {
+                      const on = openChatId === chat.id;
+                      return <button key={chat.id} onClick={() => go({ name: "chat", id: chat.id })} title={chat.title}
+                        aria-current={on ? "page" : undefined}
+                        className={cx("h-7 min-w-0 px-2 rounded-sm text-left text-xs truncate no-drag", on ? "bg-selected text-ink" : "text-ink-2 hover:text-ink hover:bg-hover")}>{chat.title || "Untitled chat"}</button>;
+                    })}
+                    {chats.length > CHAT_PREVIEW && <button onClick={() => setShowAll((v) => ({ ...v, [p.id]: !v[p.id] }))}
+                      className="h-6 px-2 rounded-sm text-left text-xs text-ink-3 hover:text-ink hover:bg-hover no-drag">{showAll[p.id] ? "Show less" : `Show all ${chats.length}`}</button>}
+                    {chats.length === 0 && <button onClick={() => void newChat(p)} disabled={!p.exists || creating}
+                      className="h-6 px-2 rounded-sm text-left text-xs text-ink-3 hover:text-ink hover:bg-hover disabled:opacity-40 no-drag">No chats · New chat</button>}
+                  </div>
+                )}
               </section>
             );
           })}
