@@ -672,8 +672,10 @@ depends on the work it checks; no cycles."""
                 raise RuntimeError("Atlas Computer Use requires a model endpoint that supports Atlas-managed tools.")
             model_info = next((m for m in await provider.list_models() if m.name == agent["model"]), None)
             capabilities = (model_info.capabilities if model_info else {}) or {}
-            if capabilities.get("vision") is not True or capabilities.get("tools") is not True or provider.tool_support(agent["model"]) is not True:
-                raise RuntimeError("This model has not verified both image input and tool support. Choose another model.")
+            if (capabilities.get("vision") is False or capabilities.get("tools") is False
+                    or provider.vision_support(agent["model"]) is False
+                    or provider.tool_support(agent["model"]) is False):
+                raise RuntimeError("This model reports that it does not support both image input and tool calls.")
             consent_for = task_config.get("computer_consent_for")
             # A custom loopback endpoint may proxy frames to a hosted service. Treat only the
             # default Ollama connection as local; require the same explicit consent as hosted APIs.

@@ -193,7 +193,9 @@ function AccessMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => 
   const provider = h.providers.find((p) => p.id === (agent?.provider_id || cfg.provider_id));
   const modelName = agent?.model || cfg.model;
   const model = h.models.find((m) => m.provider_id === provider?.id && m.name === modelName);
-  const computerReady = cfg.mode !== "team" && !provider?.agentic && model?.capabilities?.vision === true && model?.capabilities?.tools === true;
+  const unsupported = model?.capabilities?.vision === false || model?.capabilities?.tools === false;
+  const computerReady = cfg.mode !== "team" && !!provider && !!modelName && !provider.agentic && !unsupported;
+  const capabilitiesUnverified = model?.capabilities?.vision !== true || model?.capabilities?.tools !== true;
   const consentKey = `${provider?.id || ""}:${modelName || ""}:${provider?.base_url || ""}`;
   // A loopback endpoint can proxy requests to a hosted service. Only the bundled/default Ollama
   // connection is treated as local; every custom endpoint gets the screenshot disclosure.
@@ -204,6 +206,7 @@ function AccessMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => 
   ];
   const enableComputerUse = () => {
     if (!computerReady) return;
+    if (capabilitiesUnverified && !window.confirm(`Atlas cannot verify that ${modelName} supports both images and tool calls. Computer Use may fail. Try it anyway?`)) return;
     const hosted = !localProvider;
     if (hosted && cfg.computer_consent_for !== consentKey) {
       const approved = window.confirm(`Atlas Computer Use will capture your screen and send frames to ${provider?.name} (${modelName}) for this chat. Stop prevents the next action; an action already sent to macOS may finish. Continue?`);
@@ -218,7 +221,7 @@ function AccessMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => 
       <MenuLabel>Access for this chat</MenuLabel>
       {options.map((o) => <MenuRow key={o.id} active={level === o.id} onClick={() => { set({ access_level: o.id }); setOpen(false); }} hint={o.hint}>{o.label}</MenuRow>)}
       <MenuRow active={level === "computer_use"} disabled={!computerReady} onClick={enableComputerUse}
-        hint={computerReady ? `Use Mac screen and input${localProvider ? " · inference stays on this Mac" : " · screens are shared with provider"}; macOS permissions are required` : "Choose a verified image and tool capable model; team and CLI modes aren't available yet."}>Atlas Computer Use</MenuRow>
+        hint={computerReady ? `${capabilitiesUnverified ? "Model support unverified · " : ""}Use Mac screen and input${localProvider ? " · inference stays on this Mac" : " · screens are shared with provider"}; macOS permissions are required` : cfg.mode === "team" ? "Computer Use isn't available for team chats yet." : !provider || !modelName ? "Choose a model first." : provider.agentic ? "CLI model providers aren't supported for Computer Use." : "This model reports that it doesn't support images or tool calls."}>Atlas Computer Use</MenuRow>
     </Popover>
   </div>;
 }
