@@ -1,5 +1,30 @@
 # Release notes
 
+## 0.5.0 — 2026-11-06
+
+### Dynamic Island
+
+- Atlas now lives in the notch (or a virtual notch on displays without one) as a Dynamic Island with a glowing orb. The orb blinks, follows the pointer and reacts to what Atlas is doing: planning, working, done, or needing you.
+- While agents work, the island shows the latest step, such as the command it ran or the file it edited.
+- Hover or click to open it. Ask Atlas a question right from the island and pick the model to use; replies stream in and can be opened in the main window.
+- Approve, always allow, or deny commands and answer agent questions from the island or the new menu bar menu. Approving anywhere clears the request everywhere.
+- Atlas reports its runs to Coucou as the agent "atlas". When Coucou or Vorssaint is running, Atlas's island leaves the notch to them and shows approvals as a card under the menu bar.
+- Closing the main window keeps Atlas running for the island and menu bar; reopen it from the Dock or the menu.
+
+### Agents and projects
+
+- Project chats run as agents with file, terminal and Git tools, so Atlas runs commands instead of printing them.
+- Auto-approve per chat: everyday commands run without asking, while deleting files, git push or reset, chmod, kill, piping downloads to a shell and publishing still ask. Blocked commands stay blocked.
+- Runs show a live, Claude-style list of each command and file action with its output. The Session panel shows progress, changed files and context.
+- Projects in the Work sidebar are collapsible groups with their chats, newest first. Project chats stay in Work and no longer appear in Chat history.
+
+### Interface and fixes
+
+- Interface size uses native page zoom, so everything scales evenly.
+- Resizing the window no longer flashes grey; side panels no longer cover the chat; composer controls wrap with Send kept in place.
+- Fixed the previous chat briefly showing when switching chats.
+- Softer spring motion, press feedback, system reduced-motion support, and a quiet starfield on the empty Chat and Work screens in dark theme.
+
 ## 0.4.0 — 2026-11-05
 
 ### Chat access and computer use
