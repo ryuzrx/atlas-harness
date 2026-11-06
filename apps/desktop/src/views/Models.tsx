@@ -1,13 +1,11 @@
-import React, { useEffect, useState } from "react";
-import { Download, Play, Square, RefreshCw, Zap, FlaskConical, Trash2, PowerOff, MoreHorizontal, Check, Search, Sparkles } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { Download, Play, Square, Zap, MoreHorizontal, Check, Plus } from "lucide-react";
 import { api, bytes, Model, Provider, subscribe, useApi } from "../api";
-import { Badge, Button, Card, cx, Empty, Field, Input, Menu, Meter, Modal, PageHeader, Segmented, Select, StatusBadge, useAction } from "../components/ui";
+import { Button, Card, cx, Empty, Field, Input, Menu, Modal, PageHeader, SectionTitle, Segmented, Select, useAction } from "../components/ui";
 import { CATEGORIES, ConnectForm, isConnected, Preset, ProviderIcon, ProviderTile, resolveProviderIconKey } from "../components/Endpoints";
-import { useStore } from "../store";
-import { ModelFolder } from "../components/ModelFolder";
-import { BrandMark, brandFor } from "../components/Brand";
-import { ModelFinder } from "../components/ModelFinder";
 import { ModelsList } from "../components/ModelsList";
+import { ModelLibrary } from "../components/ModelLibrary";
+import { useStore } from "../store";
 
 function EndpointRow({ p, count, reload, ollama }: { p: Provider; count: number; reload: () => void; ollama?: React.ReactNode }) {
   const { busy, run } = useAction();
@@ -72,14 +70,19 @@ function Gallery({ presets, providers, onPick }: { presets: Preset[]; providers:
   const [cat, setCat] = useState<"all" | Preset["category"]>("all");
   const [q, setQ] = useState("");
   const shown = presets.filter((p) => (cat === "all" || p.category === cat) && (!q || (p.label + p.note).toLowerCase().includes(q.toLowerCase())));
+  const filters = [{ id: "all" as const, label: `All ${presets.length}` }, ...CATEGORIES];
   return (
     <section>
-      <div className="flex items-center gap-3 mb-3 flex-wrap">
-        <h2 className="text-lg font-semibold text-ink">Add an endpoint</h2>
-        <div className="flex-1" />
-        <Segmented value={cat} onChange={setCat} options={[{ id: "all", label: `All ${presets.length}` }, ...CATEGORIES.map((c) => ({ id: c.id, label: c.label }))]} />
+      <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+        <h2 className="text-base font-semibold text-ink">Add an endpoint</h2>
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search providers" aria-label="Search providers" className="!w-[220px] !h-8" />
       </div>
+      <nav aria-label="Endpoint categories" className="flex flex-wrap gap-x-4 border-b border-line mb-3">
+        {filters.map((filter) => (
+          <button key={filter.id} onClick={() => setCat(filter.id)} aria-current={cat === filter.id ? "true" : undefined}
+            className={cx("h-9 border-b text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
+              cat === filter.id ? "border-[var(--accent)] text-ink" : "border-transparent text-ink-2 hover:text-ink")}>{filter.label}</button>))}
+      </nav>
       <div className="grid grid-cols-3 gap-3 max-[1180px]:grid-cols-2 max-[760px]:grid-cols-1">
         {shown.map((p) => {
           const on = isConnected(p, providers);
@@ -118,112 +121,6 @@ function OllamaControls({ reload }: { reload: () => void }) {
   return null;
 }
 
-function PullModal({ open, onClose, providers, installed }: { open: boolean; onClose: () => void; providers: Provider[]; installed: Set<string> }) {
-  const { data: meta } = useApi<any>(open ? "/meta" : null);
-  const lib: { name: string; group: string; size: string; note: string }[] = meta?.ollama_library || [];
-  const ollamas = providers.filter((p) => p.kind === "ollama");
-  const [pid, setPid] = useState(""); const [name, setName] = useState(""); const [q, setQ] = useState("");
-  const [cat, setCat] = useState("All");
-  const [finding, setFinding] = useState(false);
-  const [asking, setAsking] = useState<string | null>(null);   // model waiting for a "where should it go?" answer
-  const [placed, setPlaced] = useState(false);                // folder confirmed for this visit
-  const [status, setStatus] = useState<Record<string, any>>({});
-  const downloading = Object.values(status).some((st: any) => st && !st.error && !["success", "cancelled"].includes(st.status));
-  const { run } = useAction();
-  useEffect(() => { setPid(ollamas[0]?.id || ""); }, [open, ollamas.length]);
-  useEffect(() => { if (!open) { setPlaced(false); setAsking(null); } }, [open]);
-  useEffect(() => subscribe((m) => { if (m.kind === "pull") setStatus((s) => ({ ...s, [m.model]: m })); }), []);
-  const pull = (model: string) => {
-    if (!pid || !model) return;
-    setStatus((s) => ({ ...s, [model]: { status: "starting" } }));
-    run("p" + model, () => api("/models/pull", { body: { provider_id: pid, model } }));
-  };
-  const request = (model: string) => (placed ? pull(model) : setAsking(model));
-  const isInstalled = (m: string) => installed.has(m) || status[m]?.status === "success";
-  const groups = ["All", ...Array.from(new Set(lib.map((m) => m.group))), "Installed"];
-  const countOf = (g: string) => (g === "All" ? lib.length : g === "Installed" ? lib.filter((m) => isInstalled(m.name)).length : lib.filter((m) => m.group === g).length);
-  const shown = lib.filter((m) => (cat === "All" || (cat === "Installed" ? isInstalled(m.name) : m.group === cat)) &&
-    (!q || (m.name + " " + m.note + " " + (brandFor(m.name)?.label || "")).toLowerCase().includes(q.toLowerCase())));
-
-  const Card = ({ m }: { m: { name: string; group: string; size: string; note: string } }) => {
-    const st = status[m.name]; const has = isInstalled(m.name);
-    const active = st && !st.error && !["success", "cancelled"].includes(st.status);
-    const base = m.name.split("/").pop()!; const [family, tag] = base.split(":");
-    const brand = brandFor(m.name);
-    return (
-      <div className="rounded-lg border border-line bg-surface p-4 flex flex-col gap-3 hover:border-line-strong transition-colors">
-        <div className="flex items-start gap-3">
-          <BrandMark brand={brand} label={family} size={44} />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 min-w-0"><span className="text-base font-medium text-ink truncate" title={m.name}>{family}</span>
-              {tag && tag !== "latest" && <span className="shrink-0 text-2xs text-ink-2 border border-line rounded-sm px-1.5 leading-[18px]">{tag}</span>}</div>
-            <div className="text-xs text-ink-3 truncate">{brand?.label || m.group}</div>
-          </div>
-        </div>
-        <p className="text-sm leading-[18px] text-ink-2 line-clamp-2 min-h-[36px]">{noteWithoutBrand(m.note, brandFor(m.name)?.label)}</p>
-        {active || st?.error ? (
-          <div>
-            <div className={cx("text-xs mb-1.5", st.error ? "text-bad" : "text-ink-2")}>{st.error || (st.total ? `${bytes(st.completed || 0)} of ${bytes(st.total)}` : st.status)}</div>
-            {st.total ? <Meter value={st.completed || 0} max={st.total} tone="bg-ink" /> : null}
-          </div>
-        ) : (
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-ink-3 tnum">{m.size}</span>
-            {has ? <span className="text-sm text-ink-2 flex items-center gap-1"><Check size={14} />Installed</span>
-              : <Button size="sm" icon={<Download size={13} />} onClick={() => request(m.name)}>Download</Button>}
-          </div>)}
-      </div>
-    );
-  };
-
-  return (
-    <Modal open={open} onClose={onClose} title="Download models" width={1240} footer={<Button variant="ghost" onClick={onClose}>Done</Button>}>
-      {!ollamas.length ? <Empty title="Ollama isn't connected" body="Connect or start Ollama on the Models page to download local models." /> : (
-        <div className="space-y-4">
-          <ModelFolder disabled={downloading} />
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none" />
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${lib.length} models or companies`} aria-label="Search models"
-                className="w-full h-10 pl-9 pr-3 rounded-lg bg-hover border border-line text-base text-ink placeholder:text-ink-3 outline-none focus:border-line-strong" />
-            </div>
-            <Button className="!h-10" icon={<Sparkles size={14} />} onClick={() => setFinding(true)}>Find the best for me</Button>
-            {ollamas.length > 1 && <Select value={pid} onChange={(e) => setPid(e.target.value)} className="!w-48 !h-10">{ollamas.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>}
-          </div>
-          <div className="grid grid-cols-[200px_1fr] gap-6 max-[900px]:grid-cols-1">
-            <nav aria-label="Model categories" className="flex flex-col gap-0.5 max-[900px]:flex-row max-[900px]:flex-wrap">
-              {groups.map((g) => (
-                <button key={g} onClick={() => setCat(g)} aria-current={cat === g ? "true" : undefined}
-                  className={cx("h-9 px-3 rounded-md flex items-center justify-between text-base text-left", cat === g ? "bg-selected text-ink" : "text-ink-2 hover:bg-hover hover:text-ink")}>
-                  <span className="truncate">{g === "Abliterated" ? "Uncensored" : g}</span><span className="text-xs text-ink-3 tnum ml-2">{countOf(g)}</span></button>))}
-            </nav>
-            <div className="min-w-0">
-              {cat === "Abliterated" && <p className="mb-3 text-sm text-ink-3">Community builds with safety tuning removed.</p>}
-              <div className="max-h-[62vh] overflow-y-auto pr-1">
-                {shown.length === 0 ? <div className="py-16 text-center text-sm text-ink-3">{q ? `No models match “${q}”.` : "Nothing here yet."}</div> : (
-                  <div className="grid grid-cols-3 gap-3.5 max-[1250px]:grid-cols-2 max-[900px]:grid-cols-1">{shown.map((m) => <Card key={m.name} m={m} />)}</div>)}
-              </div>
-            </div>
-          </div>
-          <Field label="Any other model" hint="Any Ollama library tag, a community model (user/model:tag), or a Hugging Face GGUF (hf.co/user/repo:quant).">
-            <div className="flex gap-2"><Input value={name} onChange={(e) => setName(e.target.value.trim())} placeholder="e.g. hf.co/bartowski/Qwen2.5-7B-Instruct-GGUF:Q4_K_M" />
-              <Button onClick={() => request(name)} disabled={!name}>Download</Button></div>
-          </Field>
-          {name && status[name] && (
-            <div className="text-sm"><span className={status[name].error ? "text-bad" : "text-ink-2"}>{status[name].error || status[name].status}</span>
-              {status[name].total ? <div className="mt-1.5"><Meter value={status[name].completed || 0} max={status[name].total} tone="bg-ink" /></div> : null}</div>)}
-        </div>
-      )}
-      <ModelFinder open={finding} onClose={() => setFinding(false)} lib={lib} installed={installed} onPick={request} />
-      <Modal open={!!asking} onClose={() => setAsking(null)} title="Where should it be saved?" width={520}
-        footer={<><Button variant="ghost" onClick={() => setAsking(null)}>Cancel</Button><Button variant="primary" icon={<Download size={14} />} onClick={() => { const m = asking!; setPlaced(true); setAsking(null); pull(m); }}>Download here</Button></>}>
-        <p className="text-base text-ink-2 mb-3">Atlas will download <span className="font-mono text-ink">{asking}</span> into this folder. You can pick a different drive or folder first.</p>
-        <ModelFolder variant="row" className="!px-0 !py-0" />
-      </Modal>
-    </Modal>
-  );
-}
-
 function TestModal({ model, onClose }: { model: Model | null; onClose: () => void }) {
   const [prompt, setPrompt] = useState("Write a Python function that reverses a string. Reply with code only.");
   const [res, setRes] = useState<any>(null);
@@ -239,8 +136,6 @@ function TestModal({ model, onClose }: { model: Model | null; onClose: () => voi
     </Modal>
   );
 }
-
-function cap(v: any) { return v === true ? <Badge tone="ok">yes</Badge> : v === false ? <Badge tone="muted">no</Badge> : <Badge tone="muted">unverified</Badge>; }
 
 /** "Meta, small and fast" under a card already labelled Meta reads as "Small and fast". */
 function noteWithoutBrand(note: string, brand?: string) {
@@ -263,52 +158,76 @@ export function Models() {
   const { data: providers = [], reload } = useApi<Provider[]>("/providers", ["provider"]);
   const { data: models = [], loading, reload: reloadModels } = useApi<Model[]>("/models", ["model", "provider", "agent"]);
   const { data: meta } = useApi<any>("/meta");
-  const presets: Preset[] = meta?.provider_presets || [];
   const { settings: appSettings } = useStore();
-  const [tab, setTab] = useState<"endpoints" | "models">(() => { const d = appSettings?.["models.default_tab"]; return d === "endpoints" || d === "models" ? d : (localStorage.getItem("atlas_models_tab") as any) || "endpoints"; });
+  const presets: Preset[] = meta?.provider_presets || [];
+  const [showGallery, setShowGallery] = useState(false);
   const [connecting, setConnecting] = useState<Preset | null>(null);
-  const [pulling, setPulling] = useState(false);
   const [testing, setTesting] = useState<Model | null>(null);
-  const [q, setQ] = useState("");
-  const { busy, run } = useAction();
+  const initialScrollDone = useRef(false);
   const real = models.filter((m) => m.name);
   const failed = models.filter((m) => !m.name);
   const counts = (pid: string) => real.filter((m) => m.provider_id === pid).length;
   const refresh = () => { reload(); reloadModels(); };
-  const setT = (t: "endpoints" | "models") => { setTab(t); localStorage.setItem("atlas_models_tab", t); };
-  const shownModels = real.filter((m) => !q || (m.name + " " + m.provider_name).toLowerCase().includes(q.toLowerCase()));
+  const scrollTo = (id: string) => {
+    const target = document.getElementById(id);
+    const scroller = target?.closest<HTMLElement>(".overflow-y-auto");
+    if (!target || !scroller) return;
+    const top = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+    scroller.scrollTo({ top: Math.max(0, top - 16), behavior: "smooth" });
+    localStorage.setItem("atlas_models_tab", id === "runtime-sources" ? "endpoints" : "models");
+  };
+  useEffect(() => {
+    if (loading || !appSettings || initialScrollDone.current) return;
+    initialScrollDone.current = true;
+    const saved = appSettings?.["models.default_tab"];
+    const last = localStorage.getItem("atlas_models_tab");
+    const section = saved === "endpoints" ? "runtime-sources"
+      : saved === "models" ? "installed-models"
+        : last === "models" ? "installed-models" : null;
+    if (section) requestAnimationFrame(() => scrollTo(section));
+  }, [loading, appSettings?.["models.default_tab"]]);
+  const addEndpoint = () => {
+    setShowGallery(true);
+    requestAnimationFrame(() => scrollTo("runtime-sources"));
+  };
   return (
-    <div className="max-w-[1200px] mx-auto">
-      <PageHeader title="Models" subtitle="Connect endpoints on this Mac, in the cloud with your own keys, or through agent CLIs."
-        actions={<>
-          <Segmented value={tab} onChange={setT} options={[{ id: "endpoints", label: `Endpoints ${providers.length}` }, { id: "models", label: `Models ${real.length}` }]} />
-          {providers.some((p) => p.kind === "ollama") && <Button icon={<Download size={13} />} onClick={() => setPulling(true)}>Download models</Button>}
-        </>} />
-      <ModelFolder className="mb-6" />
+    <div className="max-w-[1200px] mx-auto space-y-8">
+      <PageHeader title="Models" subtitle="Connect runtimes, find local models, and choose what Atlas can use."
+        actions={<Button icon={<Plus size={14} />} onClick={addEndpoint}>Add endpoint</Button>} />
+      <nav aria-label="Models page sections" className="-mt-5 flex flex-wrap gap-x-6 border-b border-line">
+        <button type="button" onClick={() => scrollTo("runtime-sources")} className="h-9 inline-flex items-center text-xs text-ink-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">Runtime sources</button>
+        <button type="button" onClick={() => scrollTo("model-library")} className="h-9 inline-flex items-center text-xs text-ink-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">Model library</button>
+        <button type="button" onClick={() => scrollTo("installed-models")} className="h-9 inline-flex items-center text-xs text-ink-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">Available models</button>
+      </nav>
 
-      {tab === "endpoints" ? (
-        <div key="e" className="fade-in space-y-9">
-          <section>
-            <h2 className="text-lg font-semibold text-ink mb-3">Connected</h2>
-            {providers.length === 0 ? (
-              <Card><Empty title="No endpoints yet" body="Pick one below. Ollama runs models privately on this Mac; cloud APIs use your own key." /></Card>
-            ) : (
-              <div className="rounded-lg border border-line bg-surface divide-y divide-[var(--border)]">
-                {providers.map((p) => <EndpointRow key={p.id} p={p} count={counts(p.id)} reload={refresh} ollama={p.kind === "ollama" ? <OllamaControls reload={refresh} /> : undefined} />)}
-              </div>
-            )}
-          </section>
-          {presets.length > 0 && <Gallery presets={presets} providers={providers} onPick={setConnecting} />}
-        </div>
-      ) : (
-        <ModelsList key="m" models={real} failed={failed} providers={providers} loading={loading} onTest={setTesting} reload={refresh} onGoEndpoints={() => setT("endpoints")} />
-      )}
+      <section id="runtime-sources" className="scroll-mt-6">
+        <SectionTitle action={providers.length > 0 && <span className="text-xs text-ink-3 tnum">{providers.length} source{providers.length === 1 ? "" : "s"}</span>}>Runtime sources</SectionTitle>
+        {providers.length === 0 ? (
+          <Card><Empty title="No runtime sources yet" body="Add Ollama for local models or connect a provider that already hosts models."
+            action={<Button icon={<Plus size={13} />} onClick={() => setShowGallery(true)}>Browse endpoints</Button>} /></Card>
+        ) : (
+          <div className="rounded-lg border border-line bg-surface divide-y divide-[var(--border)]">
+            {providers.map((p) => <EndpointRow key={p.id} p={p} count={counts(p.id)} reload={refresh} ollama={p.kind === "ollama" ? <OllamaControls reload={refresh} /> : undefined} />)}
+          </div>) }
+        {presets.length > 0 && <div className="mt-3">
+          <button onClick={() => setShowGallery((shown) => !shown)} aria-expanded={showGallery}
+            className="h-9 px-2 -ml-2 rounded-md inline-flex items-center gap-2 text-sm text-ink-2 hover:text-ink hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
+            <Plus size={14} />{showGallery ? "Close endpoint list" : "Browse available endpoints"}
+          </button>
+          {showGallery && <div id="endpoint-gallery" className="mt-3"><Gallery presets={presets} providers={providers} onPick={setConnecting} /></div>}
+        </div>}
+      </section>
+
+      <ModelLibrary providers={providers} installed={new Set(real.filter((m) => m.provider_kind === "ollama").map((m) => m.name!))} onRefresh={reloadModels} />
+
+      <section id="installed-models" className="scroll-mt-6">
+        <SectionTitle action={<span className="text-xs text-ink-3 tnum">{real.length} available</span>}>Available models</SectionTitle>
+        <ModelsList models={real} failed={failed} providers={providers} loading={loading} onTest={setTesting} reload={refresh} onGoEndpoints={() => scrollTo("runtime-sources")} />
+      </section>
 
       <Modal open={!!connecting} onClose={() => setConnecting(null)} title={<span className="inline-flex items-center gap-2"><ProviderIcon providerKey={connecting?.id} label={connecting?.label} size={18} />Connect endpoint</span>} width={560}>
         {connecting && <ConnectForm preset={connecting} onConnected={() => { setConnecting(null); refresh(); }} />}
       </Modal>
-      <PullModal open={pulling} onClose={() => { setPulling(false); reloadModels(); }} providers={providers}
-        installed={new Set(real.filter((m) => providers.find((p) => p.id === m.provider_id)?.kind === "ollama").map((m) => m.name!))} />
       <TestModal model={testing} onClose={() => setTesting(null)} />
     </div>
   );
