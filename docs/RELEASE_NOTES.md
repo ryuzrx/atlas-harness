@@ -1,5 +1,19 @@
 # Release notes
 
+## 0.5.1 — 2026-11-06
+
+### Approvals
+
+- "Always allow" now really stops asking: Atlas remembers the exact command you approved and runs it without a prompt next time. Blocked commands stay blocked. It's available in the chat approval card, the Dynamic Island and the menu bar.
+- Auto-approve no longer asks about everyday commands that hide errors with `2>/dev/null` or write to temporary folders. Writing into system paths still asks.
+- Auto-approve now also applies to Claude Code and Codex agents.
+
+### Previews
+
+- Runs show the images and 3D models an agent creates or changes, right in the chat, including files made by commands such as Blender exports.
+- 3D models (glTF/GLB, OBJ, STL, PLY) open in a built-in viewer you can rotate and zoom, with a large view. Images open full size.
+- Only image and model files from the run's own folder can be previewed.
+
 ## 0.5.0 — 2026-11-06
 
 ### Dynamic Island
