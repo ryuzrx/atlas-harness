@@ -71,3 +71,17 @@ def test_auto_approve_allows_build_commands_but_still_asks_for_critical_ones():
     assert classify_command("rm build.txt", "ask", [], auto_approve=True)[0] == "ask"
     assert classify_command("git push origin main", "ask", [], auto_approve=True)[0] == "ask"
     assert classify_command("sudo rm -rf /", "ask", [], auto_approve=True)[0] == "deny"
+
+
+def test_dev_null_redirect_is_not_destructive_but_system_writes_are():
+    allow = ["ls"]
+    assert classify_command("ls 2>/dev/null", "ask", allow)[0] == "allow"
+    assert classify_command("npm test > /tmp/out.txt", "ask", [], auto_approve=True)[0] == "allow"
+    assert classify_command("echo x > /etc/hosts", "ask", [], auto_approve=True)[0] == "ask"
+
+
+def test_always_allow_matches_the_exact_command_only():
+    always = ["npm install && npm run build"]
+    assert classify_command("npm install  &&  npm run build", "ask", [], always=always)[0] == "allow"
+    assert classify_command("npm install && npm run dev", "ask", [], always=always)[0] == "ask"
+    assert classify_command("sudo rm -rf /", "ask", [], always=["sudo rm -rf /"])[0] == "deny"   # blocked stays blocked

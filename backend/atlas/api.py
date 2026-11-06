@@ -1121,6 +1121,80 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
         S.bus.changed("task", tid)
         return {"ok": True, "note": "Task branch kept; delete it with git if no longer needed."}
 
+    # ------------------------------------------------------------ media previews (images, 3D models)
+    MEDIA_KINDS = {".png": "image", ".jpg": "image", ".jpeg": "image", ".gif": "image", ".webp": "image", ".svg": "image",
+                   ".glb": "model", ".gltf": "model", ".obj": "model", ".stl": "model", ".ply": "model"}
+    MAX_MEDIA_BYTES = 60 * 1024 * 1024
+
+    def media_roots(t: Dict[str, Any]) -> List[Path]:
+        """Where a run's files live: its isolated worktree first, then the project folder."""
+        roots: List[Path] = []
+        if t.get("worktree") and Path(t["worktree"]).is_dir():
+            roots.append(Path(t["worktree"]))
+        p = S.db.get("projects", t["project_id"]) if t.get("project_id") else None
+        if p and Path(p["path"]).is_dir():
+            roots.append(Path(p["path"]))
+        return roots
+
+    def media_kind(path: str) -> Optional[str]:
+        return MEDIA_KINDS.get(Path(path).suffix.lower())
+
+    @app.get("/api/tasks/{tid}/media")
+    async def task_media(tid: str):
+        """Images and 3D models a run created or changed, newest first (for inline previews)."""
+        root_task = must("tasks", tid)
+        tasks = [root_task] + S.db.q("SELECT * FROM tasks WHERE parent_id=?", (tid,))
+        found: Dict[str, Dict[str, Any]] = {}
+        for t in tasks:
+            roots = media_roots(t)
+            names = set((t.get("artifacts") or {}).get("files") or [])
+            in_place = not (t.get("worktree") and Path(t["worktree"]).is_dir())
+            for root in roots[:1]:
+                if gitops.is_repo(root):
+                    for st in await asyncio.to_thread(gitops.status, root):
+                        names.add(st["path"].split(" -> ")[-1].strip('"'))
+            since = (t.get("started_at") or t.get("created_at") or 0) - 2
+            for rel in names:
+                kind = media_kind(rel)
+                if not kind:
+                    continue
+                for root in roots:
+                    try:
+                        f = resolve_in_workspace(root, rel)
+                    except PermissionDenied:
+                        continue
+                    if not f.is_file():
+                        continue
+                    stat = f.stat()
+                    # in the shared project folder, only files this run touched (not older edits of yours)
+                    if in_place and stat.st_mtime < since:
+                        break
+                    if stat.st_size <= MAX_MEDIA_BYTES:
+                        found[f"{t['id']}:{rel}"] = {"task_id": t["id"], "path": rel, "name": f.name, "kind": kind,
+                                                     "size": stat.st_size, "mtime": stat.st_mtime}
+                    break
+        return sorted(found.values(), key=lambda m: -m["mtime"])[:24]
+
+    @app.get("/api/tasks/{tid}/file")
+    async def task_file(tid: str, path: str):
+        """Serve one preview file from a run's workspace (media types only, never outside it)."""
+        t = must("tasks", tid)
+        if not media_kind(path):
+            raise HTTPException(415, "Only images and 3D models can be previewed.")
+        for root in media_roots(t):
+            try:
+                f = resolve_in_workspace(root, path)
+            except PermissionDenied as e:
+                err(e, 403)
+            if f.is_file():
+                if f.stat().st_size > MAX_MEDIA_BYTES:
+                    raise HTTPException(413, "File is too large to preview.")
+                types = {".svg": "image/svg+xml", ".glb": "model/gltf-binary", ".gltf": "model/gltf+json",
+                         ".obj": "text/plain", ".stl": "model/stl", ".ply": "application/octet-stream"}
+                return FileResponse(f, media_type=types.get(f.suffix.lower()),
+                                    headers={"Cache-Control": "no-cache", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"})
+        raise HTTPException(404, "File not found in this run's workspace.")
+
     @app.get("/api/tasks/{tid}/diff")
     async def task_diff(tid: str):
         t = must("tasks", tid)
@@ -1178,7 +1252,7 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
             await approve_plan(aid[5:], body)
             return {"ok": True}
         try:
-            return S.orch.decide(aid, bool(body.get("approved")), body.get("note", ""))
+            return S.orch.decide(aid, bool(body.get("approved")), body.get("note", ""), bool(body.get("always")))
         except InvalidTransition as e:
             err(e, 409)
 

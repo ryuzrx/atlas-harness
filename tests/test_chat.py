@@ -103,3 +103,26 @@ def test_project_chat_with_only_project_context_gets_workspace_tools(repo):
         wait_msg(c, conv["id"], timeout=30)
         task = c.get(f"/api/tasks/{out['assistant']['task_id']}", headers=H).json()
         assert set(task["config"]["tool_limit"]) >= {"read", "write", "shell", "git"}
+
+
+def test_run_media_lists_and_serves_previews_safely(repo):
+    script = {"General assistant": [("write_file", {"path": "renders/cube.png", "content": "PNGDATA"}),
+                                    ("write_file", {"path": "model.stl", "content": "solid cube\nendsolid cube\n"}),
+                                    ("finish", {"summary": "made a render and a model"})]}
+    with client(script) as c:
+        prov = c.post("/api/providers", json={"kind": "scripted", "name": "Scripted"}, headers=H).json()
+        proj = c.post("/api/projects", json={"path": str(repo)}, headers=H).json()
+        conv = c.post("/api/conversations", json={}, headers=H).json()
+        cfg = {"mode": "model", "provider_id": prov["id"], "model": "scripted", "tools": ["read", "write"],
+               "project_id": proj["id"], "auto_approve": True}
+        out = c.post(f"/api/conversations/{conv['id']}/messages", json={"content": "Render it", "config": cfg}, headers=H).json()
+        wait_msg(c, conv["id"], timeout=30)
+        tid = out["assistant"]["task_id"]
+        media = c.get(f"/api/tasks/{tid}/media", headers=H).json()
+        kinds = {m["path"]: m["kind"] for m in media}
+        assert kinds == {"renders/cube.png": "image", "model.stl": "model"}
+        r = c.get(f"/api/tasks/{tid}/file", params={"path": "renders/cube.png", "token": TOKEN})
+        assert r.status_code == 200 and r.content == b"PNGDATA"
+        assert c.get(f"/api/tasks/{tid}/file", params={"path": "../../etc/passwd.png"}, headers=H).status_code == 403
+        assert c.get(f"/api/tasks/{tid}/file", params={"path": "calc.py"}, headers=H).status_code == 415
+        assert c.get(f"/api/tasks/{tid}/file", params={"path": "renders/cube.png"}).status_code == 401

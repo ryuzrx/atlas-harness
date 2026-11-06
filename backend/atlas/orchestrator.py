@@ -247,12 +247,20 @@ class Orchestrator:
         else:
             self.cancel(task_id, "Plan rejected by user")
 
-    def decide(self, approval_id: str, approved: bool, note: str = "") -> Dict[str, Any]:
+    def decide(self, approval_id: str, approved: bool, note: str = "", always: bool = False) -> Dict[str, Any]:
         a = self.db.get("approvals", approval_id)
         if not a or a["status"] != "pending":
             raise InvalidTransition("Approval is not pending.")
         if a.get("kind") == "user_question":
             raise InvalidTransition("This item needs an answer, not an approval decision.")
+        command = (a.get("payload") or {}).get("command") if a.get("kind") == "command" else None
+        if approved and always and command:
+            from .security import normalize_command
+            saved = list(self.db.settings().get("permissions.always_allow") or [])
+            if normalize_command(command) not in {normalize_command(c) for c in saved}:
+                saved.append(normalize_command(command))
+                self.db.set_setting("permissions.always_allow", saved)
+                self.bus.changed("settings", "permissions.always_allow")
         a = self.db.update("approvals", approval_id, {"status": "approved" if approved else "denied", "decided_at": now()})
         self.db.audit("user", "approval_decision", {"approval": approval_id, "approved": approved, "note": note})
         fut = self.waiters.pop(approval_id, None)
@@ -875,11 +883,13 @@ depends on the work it checks; no cycles."""
 
     async def _run_cli(self, task, agent, prov, prompt, system, workspace, perms, settings, emit) -> Dict[str, Any]:
         policy = settings["permissions.command_policy"]
+        auto_approve = bool((task.get("config") or {}).get("auto_approve"))   # per-chat Auto-approve
         permissions = {"write": "write" in perms, "network": bool(settings["execution.allow_network_in_commands"]),
-                       "bash_allowlist": settings["permissions.allowlist"] if "shell" in perms else [],
-                       "bash_any": "shell" in perms and policy == "auto"}
+                       "bash_allowlist": (list(settings["permissions.allowlist"]) + list(settings.get("permissions.always_allow") or []))
+                                         if "shell" in perms else [],
+                       "bash_any": "shell" in perms and (policy == "auto" or auto_approve)}
         has_worktree = bool((self.db.get("tasks", task["id"]) or {}).get("worktree"))
-        if permissions["write"] and not has_worktree and settings["permissions.command_policy"] != "auto":
+        if permissions["write"] and not has_worktree and policy != "auto" and not auto_approve:
             ok = await self._approval(task, agent, "cli_agent_in_place",
                                       {"runtime": prov.kind, "workspace": str(workspace),
                                        "reason": "No isolated worktree is available; the CLI agent would edit files in place."})

@@ -86,6 +86,7 @@ DEFAULT_SETTINGS = {
         "npm run build", "npm run lint", "cargo test", "cargo build", "go test", "go build",
         "make test", "swift test", "node", "python", "python3",
     ],
+    "permissions.always_allow": [],   # exact commands approved with "Always allow"
     "permissions.protected_branches": ["main", "master", "release", "production"],
     "permissions.block_secret_files": True,
     "agents.default_temperature": 0.2,

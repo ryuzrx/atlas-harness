@@ -233,3 +233,25 @@ def test_cli_env_strips_inherited_keys(monkeypatch):
     assert "OPENAI_API_KEY" in cli_env("/usr/local/bin/claude")
     assert "OPENAI_API_KEY" not in cli_env("/opt/homebrew/bin/codex")
     assert cli_env("/usr/local/bin/claude", use_env_auth=True)["ANTHROPIC_API_KEY"] == "x"
+
+
+def test_always_allow_remembers_the_command(repo):
+    script = {
+        "ROLE-LEAD": [plan_json([{"key": "x", "title": "Run", "description": "", "role": "backend", "kind": "code", "deps": []}])],
+        "ROLE-BACKEND": [("run_command", {"command": "npm install && npm run build"}), ("finish", {"summary": "done"})],
+    }
+    with make_client(script) as c:
+        _, _, team, _ = setup_team(c, repo, roles=("lead", "backend"))
+        root = c.post("/api/objectives", json={"team_id": team["id"], "objective": "run"}, headers=H).json()
+        t0 = time.time()
+        pending = []
+        while time.time() - t0 < 10 and not pending:
+            pending = c.get("/api/approvals", headers=H).json()
+            time.sleep(0.1)
+        assert pending
+        c.post(f"/api/approvals/{pending[0]['id']}", json={"approved": True, "always": True}, headers=H)
+        wait_for(c, root["id"], {"completed", "failed"})
+        saved = c.get("/api/settings", headers=H).json()["permissions.always_allow"]
+        assert saved == ["npm install && npm run build"]
+        from atlas.security import classify_command
+        assert classify_command("npm install && npm run build", "ask", [], always=saved)[0] == "allow"

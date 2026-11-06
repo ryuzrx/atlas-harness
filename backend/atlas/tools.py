@@ -189,7 +189,8 @@ async def t_apply_patch(ctx: ToolContext, patch: str) -> str:
 
 async def t_run_command(ctx: ToolContext, command: str, timeout_s: int = 0) -> str:
     policy = ctx.settings.get("permissions.command_policy", "ask")
-    decision, reason = classify_command(command, policy, ctx.settings.get("permissions.allowlist") or [], bool(ctx.settings.get("_auto_approve")))
+    decision, reason = classify_command(command, policy, ctx.settings.get("permissions.allowlist") or [], bool(ctx.settings.get("_auto_approve")),
+                                       ctx.settings.get("permissions.always_allow") or [])
     if decision == "deny":
         raise PermissionDenied(reason)
     if decision == "ask":

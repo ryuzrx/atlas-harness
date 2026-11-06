@@ -16,6 +16,7 @@ import { Markdown } from "../components/Markdown";
 import { ExecutionViewer } from "../components/Execution";
 import { RunTimeline, summarizeSteps, useRunSteps } from "../components/RunTimeline";
 import { Starfield } from "../components/Starfield";
+import { RunMedia } from "../components/RunMedia";
 
 // ---------------------------------------------------------------- types & config
 export interface ChatConfig {
@@ -392,7 +393,7 @@ function ApprovalCard({ a }: { a: Approval }) {
         className="h-8 rounded-md bg-ink px-3.5 text-sm font-medium text-[var(--base)] hover:opacity-90 disabled:opacity-40">{busy ? "Continuing…" : "Continue"}</button></div>
     </div>;
   }
-  const decide = (approved: boolean) => run(a.id, () => api(`/approvals/${a.id}`, { body: { approved } }));
+  const decide = (approved: boolean, always = false) => run(a.id, () => api(`/approvals/${a.id}`, { body: { approved, always } }));
   const cmd = a.payload?.command || a.payload?.title;
   return (
     <div className="rounded-xl border border-line-strong bg-surface p-3">
@@ -403,6 +404,8 @@ function ApprovalCard({ a }: { a: Approval }) {
       {a.payload?.reason && <div className="mt-1.5 text-xs text-ink-2">{a.payload.reason}</div>}
       <div className="mt-2.5 flex gap-2">
         <button onClick={() => decide(true)} disabled={!!busy} className="h-8 px-3.5 rounded-md bg-ink text-[var(--base)] text-sm font-medium hover:opacity-90 disabled:opacity-50">Approve</button>
+        {a.kind === "command" && a.payload?.command && <button onClick={() => decide(true, true)} disabled={!!busy} title="Approve, and never ask again for this exact command"
+          className="h-8 px-3.5 rounded-md border border-line text-sm text-ink hover:bg-hover disabled:opacity-50">Always allow</button>}
         <button onClick={() => decide(false)} disabled={!!busy} className="h-8 px-3.5 rounded-md border border-line text-sm text-ink hover:bg-hover disabled:opacity-50">Deny</button>
       </div>
     </div>
@@ -469,6 +472,7 @@ function RunPanel({ taskId }: { taskId: string }) {
       {t.error && !open && <div className="px-3 pb-3 -mt-1 text-xs text-bad truncate">{t.error}</div>}
       {!isTeam && live && !open && <div className="border-t border-line"><RunTimeline taskId={t.id} live /></div>}
       {!isTeam && open && <div className="border-t border-line"><RunTimeline taskId={t.id} live={live} /></div>}
+      <RunMedia taskId={t.id} live={live} />
       <div className={cx("disclose", open && "open")}><div>{(open || seen) && (
         <div className="border-t border-line">
           {isTeam ? (

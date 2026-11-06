@@ -55,10 +55,13 @@ DENY_PATTERNS = [
     r"rm\s+-[a-zA-Z]*r[a-zA-Z]*f?\s+(/|~|\$HOME)(\s|$)", r"\bchmod\s+-R\s+777\s+/", r"\blaunchctl\b",
     r"\bsecurity\s+(find|dump|delete)", r"\bdefaults\s+write\b", r"\bcsrutil\b",
 ]
+# Writing output into an absolute path, except the harmless /dev/null and temp folders
+# ("cmd 2>/dev/null" is everywhere in agent commands and must not need approval).
+REDIRECT_TO_SYSTEM = r">\s*/(?!dev/null\b|tmp/|private/tmp/|var/folders/)"
 DESTRUCTIVE_PATTERNS = [
     r"\brm\s", r"\bgit\s+(push|reset\s+--hard|clean|checkout\s+--|rebase|branch\s+-D|stash\s+drop)",
     r"\bcurl\b.*\|\s*(sh|bash|zsh)", r"\bwget\b.*\|\s*(sh|bash)", r"\bnpm\s+publish\b", r"\bpip\s+install\b",
-    r"\bnpm\s+(i|install)\b", r"\bmv\s", r">\s*/", r"\bchmod\b", r"\bchown\b", r"\bkill(all)?\b",
+    r"\bnpm\s+(i|install)\b", r"\bmv\s", REDIRECT_TO_SYSTEM, r"\bchmod\b", r"\bchown\b", r"\bkill(all)?\b",
 ]
 
 
@@ -67,16 +70,25 @@ DESTRUCTIVE_PATTERNS = [
 CRITICAL_PATTERNS = [
     r"\brm\s", r"\bgit\s+(push|reset\s+--hard|clean|checkout\s+--|rebase|branch\s+-D|stash\s+drop)",
     r"\bcurl\b.*\|\s*(sh|bash|zsh)", r"\bwget\b.*\|\s*(sh|bash)", r"\bnpm\s+publish\b",
-    r">\s*/", r"\bchmod\b", r"\bchown\b", r"\bkill(all)?\b",
+    REDIRECT_TO_SYSTEM, r"\bchmod\b", r"\bchown\b", r"\bkill(all)?\b",
 ]
 
 
-def classify_command(cmd: str, policy: str, allowlist: List[str], auto_approve: bool = False) -> Tuple[str, str]:
+def normalize_command(cmd: str) -> str:
+    """Whitespace-insensitive form used for exact "always allow" matches."""
+    return " ".join(str(cmd or "").split())
+
+
+def classify_command(cmd: str, policy: str, allowlist: List[str], auto_approve: bool = False,
+                     always: Optional[List[str]] = None) -> Tuple[str, str]:
     """Return (decision, reason). decision in {'deny','ask','allow'}."""
     stripped = cmd.strip()
     for pat in DENY_PATTERNS:
         if re.search(pat, stripped):
             return "deny", f"Command matches a blocked pattern ({pat})."
+    # the user chose "Always allow" for exactly this command: honor it (blocked commands stay blocked)
+    if always and normalize_command(stripped) in {normalize_command(a) for a in always}:
+        return "allow", "You chose to always allow this command."
     for pat in (CRITICAL_PATTERNS if auto_approve else DESTRUCTIVE_PATTERNS):
         if re.search(pat, stripped):
             return "ask", "Potentially destructive command requires confirmation."

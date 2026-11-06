@@ -281,16 +281,11 @@ final class Companion: ObservableObject {
         }
     }
 
-    /// Approve now and add the exact command to the allowlist so it never asks again.
+    /// Approve now and never ask again for this exact command (remembered by Atlas, not the allowlist).
     func alwaysAllow(_ item: PendingItem) {
-        guard let command = item.command else { decide(item, approved: true); return }
         busyId = item.id
-        request("/api/settings") { [weak self] settings in
-            var list = (settings as? [String: Any])?["permissions.allowlist"] as? [String] ?? []
-            if !list.contains(command) { list.append(command) }
-            self?.request("/api/settings", method: "PUT", body: ["permissions.allowlist": list]) { _ in
-                self?.decide(item, approved: true)
-            }
+        request("/api/approvals/\(item.id)", method: "POST", body: ["approved": true, "always": item.command != nil]) { [weak self] _ in
+            self?.busyId = nil; self?.poll()
         }
     }
 
