@@ -80,6 +80,11 @@ class Provider:
             return False
         return caps.get("tools")
 
+    def vision_support(self, model: str) -> Optional[bool]:
+        """Verified image-input support for `model` (None when not yet probed)."""
+        caps = (self.config.get("model_caps") or {}).get(model) or {}
+        return caps.get("vision")
+
     def stats(self) -> Dict[str, Any]:
         return {"active_requests": self.active_requests, "total_requests": self.total_requests,
                 "errors": self.errors, "last_latency_ms": self.last_latency_ms}

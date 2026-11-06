@@ -84,6 +84,16 @@ Choose a project to provide project context. Enable only the tools needed for th
 
 An agent selected in the composer uses its own model. A team uses the models assigned to its members. Change those assignments in agent or team management.
 
+### Access and Atlas Computer Use
+
+Choose **Read only** to let an Atlas-managed agent inspect project files without editing or running commands. **Workspace** is the default and uses the selected project tools under Atlas's command and file protections.
+
+Choose **Atlas Computer Use** to let an eligible model capture the current screen and control visible Mac apps for that chat. macOS asks for Screen Recording and Accessibility permission. Clicks, typing, and key presses each pause for your approval. Screen frames sent to hosted providers or custom endpoints require your confirmation, including custom endpoints on `localhost`. Screenshots are not saved by default. **Stop** prevents later actions; a Mac action already in progress may finish.
+
+Atlas can use project-scoped commands to build your app, start its local preview server, and open that preview in your browser. Computer Use requires a model with verified image and tool support; dynamic free-model routers and CLI modes may not qualify. A team with varied model assignments cannot use Computer Use in this version.
+
+Atlas-managed agent and team runs can ask you for missing context with a question card. Answering the card resumes the same run. Direct model conversations do not pause for question cards.
+
 ## Work on a project
 
 Switch to **Work** and choose a source. **Local folder** is selected by default and lets you add a folder already on this Mac. **Git repository** clones a remote into a local folder on this Mac; it is not cloud execution. Opening a project shows a chat-style composer with that folder selected as project context.

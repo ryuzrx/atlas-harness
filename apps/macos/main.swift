@@ -9,6 +9,7 @@ import Security
 import ImageIO
 import UniformTypeIdentifiers
 import CoreGraphics
+import ApplicationServices
 
 final class DragWebView: WKWebView {
     var lastMouseDown: NSEvent?
@@ -33,6 +34,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     var stdoutBuffer = ""
     var ready = false
     var terminating = false
+    var lastCaptureSize: CGSize?
+    var lastCaptureBounds: CGRect?
+    var lastCaptureAt = Date.distantPast
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
@@ -205,6 +209,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
         let id = body["id"] as? String
+        if type == "computer" {
+            guard message.frameInfo.isMainFrame,
+                  message.frameInfo.securityOrigin.host == "127.0.0.1",
+                  message.frameInfo.securityOrigin.port == port,
+                  let id, let action = body["action"] as? [String: Any] else {
+                reply(id, ["error": "Computer requests must come from Atlas's local app window."])
+                return
+            }
+            handleComputerRequest(id: id, action: action)
+            return
+        }
         switch type {
         case "drag":
             if let e = webView.lastMouseDown { window.performDrag(with: e) }
@@ -281,6 +296,146 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         default:
             reply(id, nil)
         }
+    }
+
+    func handleComputerRequest(id: String, action: [String: Any]) {
+        switch action["action"] as? String {
+        case "capture":
+            guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else {
+                reply(id, ["error": "Allow Screen Recording for Atlas in System Settings → Privacy & Security, then restart Atlas."])
+                return
+            }
+            let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+            if (session?["CGSSessionScreenIsLocked"] as? Bool) == true {
+                reply(id, ["error": "Atlas Computer Use is paused while the Mac is locked."])
+                return
+            }
+            guard let image = CGDisplayCreateImage(CGMainDisplayID()) else {
+                reply(id, ["error": "The active display could not be captured. Check Atlas's Screen Recording permission."])
+                return
+            }
+            let width = image.width, height = image.height
+            let bounds = CGDisplayBounds(CGMainDisplayID())
+            guard let bitmap = NSBitmapImageRep(cgImage: image).representation(using: .jpeg, properties: [.compressionFactor: 0.78]) else {
+                reply(id, ["error": "Could not encode the screen capture."])
+                return
+            }
+            lastCaptureSize = CGSize(width: width, height: height)
+            lastCaptureBounds = bounds
+            lastCaptureAt = Date()
+            reply(id, ["image": ["mime_type": "image/jpeg", "data": bitmap.base64EncodedString()],
+                       "message": "Captured the main display."])
+        case "open_preview":
+            guard let value = action["url"] as? String,
+                  let parts = URLComponents(string: value), parts.scheme == "http",
+                  ["localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1"].contains(parts.host?.lowercased() ?? ""),
+                  parts.user == nil, parts.password == nil, let url = parts.url,
+                  NSWorkspace.shared.open(url) else {
+                reply(id, ["error": "Atlas only opens local http://localhost preview URLs."])
+                return
+            }
+            reply(id, ["message": "Opened the local preview in the default browser."])
+        case "click":
+            guard accessibilityAllowed(), let x = action["x"] as? Double, let y = action["y"] as? Double,
+                  let point = computerPoint(x: x, y: y) else { reply(id, ["error": "Capture a fresh screenshot before clicking."]); return }
+            let button = (action["button"] as? String) == "right" ? CGMouseButton.right : .left
+            let down: CGEventType = button == .right ? .rightMouseDown : .leftMouseDown
+            let up: CGEventType = button == .right ? .rightMouseUp : .leftMouseUp
+            guard postMouse(down, point: point, button: button), postMouse(up, point: point, button: button) else {
+                reply(id, ["error": "Allow Atlas under Accessibility in System Settings → Privacy & Security."]); return
+            }
+            reply(id, ["message": "Clicked the visible screen point."])
+        case "type":
+            guard accessibilityAllowed(), let text = action["text"] as? String, text.count <= 1000 else {
+                reply(id, ["error": "Allow Atlas under Accessibility and keep text entries under 1000 characters."]); return
+            }
+            if focusedFieldIsSecure() {
+                reply(id, ["error": "Atlas won't enter text into a password field."])
+                return
+            }
+            let source = CGEventSource(stateID: .hidSystemState)
+            for chunkStart in stride(from: 0, to: text.utf16.count, by: 20) {
+                let start = text.utf16.index(text.utf16.startIndex, offsetBy: chunkStart)
+                let end = text.utf16.index(start, offsetBy: min(20, text.utf16.count - chunkStart))
+                let units = Array(text.utf16[start..<end])
+                let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
+                units.withUnsafeBufferPointer { buffer in
+                    down?.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress)
+                }
+                down?.post(tap: .cghidEventTap)
+                CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)?.post(tap: .cghidEventTap)
+            }
+            reply(id, ["message": "Typed text into the focused app."])
+        case "key":
+            guard accessibilityAllowed(), let key = action["key"] as? String, postKeyChord(key) else {
+                reply(id, ["error": "Unsupported key chord or Accessibility permission is not enabled."]); return
+            }
+            reply(id, ["message": "Pressed the requested key."])
+        case "scroll":
+            guard accessibilityAllowed(), let x = action["x"] as? Double, let y = action["y"] as? Double,
+                  let delta = action["delta_y"] as? Int, abs(delta) <= 1200,
+                  let point = computerPoint(x: x, y: y),
+                  let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: Int32(delta), wheel2: 0, wheel3: 0) else {
+                reply(id, ["error": "Invalid scroll request or Accessibility permission is not enabled."]); return
+            }
+            event.location = point
+            event.post(tap: .cghidEventTap)
+            reply(id, ["message": "Scrolled the visible screen region."])
+        default:
+            reply(id, ["error": "Unsupported computer action."])
+        }
+    }
+
+    func computerPoint(x: Double, y: Double) -> CGPoint? {
+        guard let size = lastCaptureSize, let bounds = lastCaptureBounds, Date().timeIntervalSince(lastCaptureAt) < 30,
+              x.isFinite, y.isFinite, x >= 0, y >= 0, x < size.width, y < size.height,
+              CGDisplayBounds(CGMainDisplayID()) == bounds else { return nil }
+        return CGPoint(x: bounds.minX + x * bounds.width / size.width,
+                       y: bounds.minY + y * bounds.height / size.height)
+    }
+
+    func accessibilityAllowed() -> Bool {
+        AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+    }
+
+    func focusedFieldIsSecure() -> Bool {
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+              let focused else { return false }
+        var subrole: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(focused as! AXUIElement, kAXSubroleAttribute as CFString, &subrole) == .success else { return false }
+        return (subrole as? String) == (kAXSecureTextFieldSubrole as String)
+    }
+
+    func postMouse(_ type: CGEventType, point: CGPoint, button: CGMouseButton) -> Bool {
+        guard let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: button) else { return false }
+        event.post(tap: .cghidEventTap)
+        return true
+    }
+
+    func postKeyChord(_ value: String) -> Bool {
+        let parts = value.uppercased().split(separator: "+").map(String.init)
+        guard let name = parts.last, let code = ["ENTER": 36, "RETURN": 36, "TAB": 48, "ESC": 53, "SPACE": 49,
+            "BACKSPACE": 51, "DELETE": 117, "LEFT": 123, "RIGHT": 124, "DOWN": 125, "UP": 126,
+            "A": 0, "S": 1, "D": 2, "F": 3, "H": 4, "G": 5, "Z": 6, "X": 7, "C": 8, "V": 9,
+            "B": 11, "Q": 12, "W": 13, "E": 14, "R": 15, "Y": 16, "T": 17, "O": 31, "U": 32,
+            "I": 34, "P": 35, "L": 37, "J": 38, "K": 40, "N": 45, "M": 46][name] else { return false }
+        guard parts.count <= 3, parts.dropLast().allSatisfy({ ["CMD", "COMMAND", "CTRL", "CONTROL", "ALT", "OPTION", "SHIFT"].contains($0) }) else { return false }
+        var flags: CGEventFlags = []
+        for modifier in parts.dropLast() {
+            switch modifier {
+            case "CMD", "COMMAND": flags.insert(.maskCommand)
+            case "CTRL", "CONTROL": flags.insert(.maskControl)
+            case "ALT", "OPTION": flags.insert(.maskAlternate)
+            case "SHIFT": flags.insert(.maskShift)
+            default: break
+            }
+        }
+        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(code), keyDown: true),
+              let up = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(code), keyDown: false) else { return false }
+        down.flags = flags; up.flags = flags
+        down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
+        return true
     }
 
     func reply(_ id: String?, _ value: Any?) {

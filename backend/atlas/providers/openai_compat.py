@@ -16,6 +16,21 @@ from .base import ChatResult, ModelInfo, Provider, ProviderError, TokenCallback,
 class OpenAICompatProvider(Provider):
     kind = "openai_compat"
 
+    def __init__(self, row, secret=None):
+        super().__init__(row, secret)
+        self._caps_cache: Dict[str, Dict[str, Any]] = {}
+
+    def tool_support(self, model: str) -> Optional[bool]:
+        override = self.config.get("tool_mode")
+        if override in ("native", "text"):
+            return override == "native"
+        caps = (self.config.get("model_caps") or {}).get(model) or self._caps_cache.get(model) or {}
+        return caps.get("tools")
+
+    def vision_support(self, model: str) -> Optional[bool]:
+        caps = (self.config.get("model_caps") or {}).get(model) or self._caps_cache.get(model) or {}
+        return caps.get("vision")
+
     def headers(self) -> Dict[str, str]:
         h = {"Content-Type": "application/json"}
         for k, v in (self.config.get("headers") or {}).items():  # e.g. OpenRouter attribution headers
@@ -73,8 +88,16 @@ class OpenAICompatProvider(Provider):
                 continue
             if prefix and mid.startswith(prefix):
                 mid = mid[len(prefix):]
-            caps = {"streaming": None, "tools": None, "structured": None}
+            caps = {"streaming": None, "tools": None, "structured": None, "vision": None}
+            supported = m.get("supported_parameters")
+            if isinstance(supported, list):
+                caps["tools"] = any(x in supported for x in ("tools", "tool_choice"))
+            modalities = ((m.get("architecture") or {}).get("input_modalities")
+                          or m.get("input_modalities"))
+            if isinstance(modalities, list):
+                caps["vision"] = "image" in modalities
             caps.update(caps_store.get(mid, {}))
+            self._caps_cache[mid] = dict(caps)
             ctx = m.get("context_length") or m.get("max_model_len") or (caps_store.get(mid, {}).get("context_length"))
             out.append(ModelInfo(name=mid, provider_id=self.id, context_length=ctx, capabilities=caps,
                                  details={"owned_by": m.get("owned_by")}, state="available"))

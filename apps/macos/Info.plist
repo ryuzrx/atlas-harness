@@ -8,13 +8,14 @@
   <key>CFBundleExecutable</key><string>Atlas</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.3.4</string>
-  <key>CFBundleVersion</key><string>7</string>
+  <key>CFBundleShortVersionString</key><string>0.4.0</string>
+  <key>CFBundleVersion</key><string>8</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
   <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
+  <key>NSScreenCaptureUsageDescription</key><string>Atlas captures your screen only when you enable Atlas Computer Use for a chat, so its model can see and interact with the apps you choose to use.</string>
   <key>NSHumanReadableCopyright</key><string>Atlas. Local-first multi-agent development.</string>
 </dict>
 </plist>

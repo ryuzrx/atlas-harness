@@ -129,6 +129,11 @@ class ChatService:
         cfg = {**(conv["config"] or {}), **(config or {})}
         mode = cfg.get("mode") or "model"
         tools = [t for t in (cfg.get("tools") or []) if isinstance(t, str)]
+        access_level = cfg.get("access_level") if cfg.get("access_level") in ("read_only", "workspace", "computer_use") else "workspace"
+        if access_level == "read_only" and mode == "model" and not tools:
+            tools = ["read"]
+        if mode == "team" and access_level == "computer_use":
+            raise ChatError("Atlas Computer Use is not available for team chats.")
 
         t = now()
         user = self.db.insert("chat_messages", {
@@ -146,9 +151,12 @@ class ChatService:
             if not cfg.get("team_id") or not self.db.get("teams", cfg["team_id"]):
                 raise ChatError("Choose a team in the Agent menu.")
             task = self.orch.submit_objective(cfg["team_id"], self._context_prompt(cid, prompt, user["id"]),
-                                              cfg.get("project_id"), _title_from(content or "Objective"))
+                                              cfg.get("project_id"), _title_from(content or "Objective"),
+                                              config={"access_level": access_level, "tool_limit": tools or None,
+                                                      "conversation_id": cid,
+                                                      "computer_consent_for": cfg.get("computer_consent_for")})
             label = {"mode": "team", "team_id": cfg["team_id"]}
-        elif mode == "agent" or any(g in AGENT_TOOL_GROUPS for g in tools):
+        elif mode == "agent" or any(g in AGENT_TOOL_GROUPS for g in tools) or access_level == "computer_use":
             if mode == "agent":
                 agent = self.db.get("agents", cfg.get("agent_id") or "")
                 if not agent:
@@ -158,7 +166,9 @@ class ChatService:
             task = self.orch.create_task({
                 "title": _title_from(content or "Chat request"), "description": self._context_prompt(cid, prompt, user["id"]),
                 "agent_id": agent["id"], "team_id": agent.get("team_id"), "project_id": cfg.get("project_id"),
-                "kind": "code", "config": {"tool_limit": tools if tools else None, "conversation_id": cid}})
+                "kind": "code", "config": {"tool_limit": tools or None, "access_level": access_level,
+                                               "conversation_id": cid,
+                                               "computer_consent_for": cfg.get("computer_consent_for")}})
             label = {"mode": "agent", "agent_id": agent["id"], "agent_name": agent["name"]}
         else:
             task = None

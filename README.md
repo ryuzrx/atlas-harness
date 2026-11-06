@@ -55,6 +55,12 @@ Switch to **Work** when a task needs a project folder. Add a folder, choose a pr
 | Agent | A task for that agent; chat tool choices can narrow its permissions |
 | Team | An objective that the lead plans and delegates |
 
+### Access, questions, and Atlas Computer Use
+
+Choose **Read only** to inspect project files without edits or commands, or **Workspace** to use the selected project tools under Atlas's existing file and command safeguards. Atlas-managed agents and teams can pause with a question card when they need context; answering resumes the same run.
+
+**Atlas Computer Use** is an optional per-chat mode for eligible models. After macOS Screen Recording and Accessibility permission is granted, Atlas can capture the active display and control visible Mac apps. Clicks, typing, and key presses pause for your approval. It can also run project-scoped build commands, open a `localhost` preview in the default browser, and inspect the result. Screen frames sent to custom or hosted endpoints require an in-chat confirmation, including custom endpoints on `localhost`; captures are not saved by default. Team and CLI modes are not supported for Computer Use in this release. Stopping a run prevents later actions; an action already sent to macOS may finish.
+
 ## Models & providers
 
 The Models workspace brings **Runtime sources**, the **Model library**, and **Available models** together. Add a connection, check its health, browse its models, or download a local model without leaving the page.
@@ -151,7 +157,7 @@ Atlas stores conversations, settings, and project state on your Mac. API keys ar
 
 Local inference can stay on your Mac. When you choose a remote endpoint, cloud provider, or hosted agent CLI, relevant messages, attachments, and tool results may be sent to that service. Model downloads and optional integrations make their own network requests. See the [privacy policy](PRIVACY.md).
 
-Agents have project-scoped file access, tool permissions, command controls, and approval requests. Code tasks can run in isolated Git worktrees. You review and decide what to merge. These controls have limits; review the [security policy](SECURITY.md) and [terms](TERMS.md) before granting tools access to sensitive projects.
+Agents have project-scoped file access, tool permissions, command controls, and approval requests. Atlas Computer Use is separately enabled per chat and requires macOS permissions; hosted screenshots require an in-chat confirmation. Code tasks can run in isolated Git worktrees. You review and decide what to merge. These controls have limits; review the [security policy](SECURITY.md) and [terms](TERMS.md) before granting tools access to sensitive projects.
 
 ## Documentation
 

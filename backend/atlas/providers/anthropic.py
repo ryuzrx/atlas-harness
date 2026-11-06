@@ -48,11 +48,14 @@ class AnthropicProvider(Provider):
         except Exception as e:  # noqa: BLE001
             raise ProviderError(f"Cannot list Anthropic models: {e}") from e
         # Tool use and streaming are documented features of the Messages API for listed models.
-        return [ModelInfo(name=m["id"], provider_id=self.id, capabilities={"tools": True, "streaming": True, "structured": True},
+        return [ModelInfo(name=m["id"], provider_id=self.id, capabilities={"tools": True, "vision": True, "streaming": True, "structured": True},
                           details={"display_name": m.get("display_name"), "created_at": m.get("created_at")}, state="available")
                 for m in data]
 
     def tool_support(self, model: str) -> Optional[bool]:
+        return True
+
+    def vision_support(self, model: str) -> Optional[bool]:
         return True
 
     async def chat(self, model, messages, *, tools=None, params=None, on_token: TokenCallback = None, json_mode=False):
@@ -135,7 +138,14 @@ def _to_anthropic(msgs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     content.append({"type": "image", "source": {"type": "base64", "media_type": block.get("mime_type") or "image/png", "data": block.get("data", "")}})
                 elif block.get("type") == "text":
                     content.append({"type": "text", "text": block.get("text", "")})
-            out.append({"role": "user", "content": content})
+            if out and out[-1]["role"] == "user":
+                previous = out[-1]["content"]
+                if isinstance(previous, str):
+                    previous = [{"type": "text", "text": previous}]
+                    out[-1]["content"] = previous
+                previous.extend(content)
+            else:
+                out.append({"role": "user", "content": content})
             continue
         if out and out[-1]["role"] == "user":
             prev = out[-1]["content"]

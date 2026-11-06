@@ -31,7 +31,7 @@ export interface Team {
 export interface Task {
   id: string; parent_id?: string; team_id?: string; agent_id?: string; project_id?: string; title: string;
   description: string; kind: string; priority: number; acceptance: string[]; status: Status; deps: string[];
-  result?: string; artifacts: Record<string, any>; evidence: Record<string, any>; worktree?: string; branch?: string;
+  result?: string; artifacts: Record<string, any>; evidence: Record<string, any>; config?: Record<string, any>; worktree?: string; branch?: string;
   attempts: number; error?: string; created_at: number; updated_at: number; started_at?: number; finished_at?: number;
   agent_name?: string; agent_model?: string; team_name?: string; needs_approval?: number;
   transitions?: { from_status: string; to_status: string; reason: string; at: number }[];
@@ -149,7 +149,12 @@ export function useApi<T = any>(path: string | null, entities: string[] = [], po
 
 // ---- native shell bridge (WKWebView); graceful fallback in a browser ---------
 const pending = new Map<string, (v: any) => void>();
-(window as any).__atlasNative = (id: string, value: any) => { pending.get(id)?.(value); pending.delete(id); };
+const computerPending = new Map<string, { resolve: (v: any) => void; timeout: number }>();
+(window as any).__atlasNative = (id: string, value: any) => {
+  pending.get(id)?.(value); pending.delete(id);
+  const computer = computerPending.get(id);
+  if (computer) { window.clearTimeout(computer.timeout); computerPending.delete(id); computer.resolve(value); }
+};
 const bridge = () => (window as any).webkit?.messageHandlers?.atlas;
 export const isNative = () => !!bridge();
 
@@ -158,6 +163,20 @@ export function nativeCall<T = any>(type: string, payload: any = {}): Promise<T 
   if (!b) return Promise.resolve(null);
   const id = Math.random().toString(36).slice(2);
   return new Promise((resolve) => { pending.set(id, resolve); b.postMessage({ id, type, ...payload }); });
+}
+
+/** Send one brokered computer action to the trusted macOS shell. */
+export function computerNativeCall(id: string, action: Record<string, any>): Promise<any> {
+  const b = bridge();
+  if (!b) return Promise.resolve({ error: "Atlas Computer Use is available only in the macOS app." });
+  return new Promise((resolve) => {
+    const timeout = window.setTimeout(() => {
+      computerPending.delete(id);
+      resolve({ error: "The macOS app did not respond to the computer action." });
+    }, 45000);
+    computerPending.set(id, { resolve, timeout });
+    b.postMessage({ id, type: "computer", action });
+  });
 }
 
 export async function pickFolder(options?: { prompt?: string; message?: string }): Promise<string | null> {

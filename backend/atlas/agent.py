@@ -28,7 +28,19 @@ def est_tokens(text: str) -> int:
 
 
 def messages_tokens(msgs: List[Dict[str, Any]]) -> int:
-    return sum(est_tokens((m.get("content") or "") + json.dumps(m.get("tool_calls") or "")) for m in msgs)
+    def content_cost(content: Any) -> int:
+        if isinstance(content, str):
+            return est_tokens(content)
+        if isinstance(content, list):
+            cost = 0
+            for block in content:
+                if block.get("type") == "image":
+                    cost += 1200  # keep image cost bounded; raw base64 length is not token usage
+                else:
+                    cost += est_tokens(str(block.get("text") or ""))
+            return cost
+        return est_tokens(json.dumps(content, ensure_ascii=False))
+    return sum(content_cost(m.get("content")) + est_tokens(json.dumps(m.get("tool_calls") or "")) for m in msgs)
 
 
 def compact(msgs: List[Dict[str, Any]], budget: int) -> List[Dict[str, Any]]:
@@ -37,7 +49,8 @@ def compact(msgs: List[Dict[str, Any]], budget: int) -> List[Dict[str, Any]]:
         return msgs
     head, tail = msgs[:2], msgs[2:]
     for m in tail[:-6]:
-        if m["role"] == "tool" or (m["role"] == "user" and (m.get("content") or "").startswith("TOOL RESULT")):
+        if m["role"] == "tool" or (m["role"] == "user" and isinstance(m.get("content"), str)
+                                      and m["content"].startswith("TOOL RESULT")):
             c = m.get("content") or ""
             if len(c) > 400:
                 m["content"] = c[:200] + f"\n…[older tool output elided, {len(c)} chars]…"
@@ -119,7 +132,7 @@ class AgentRunner:
         if hasattr(prov, "ensure_caps"):
             await prov.ensure_caps(model)  # type: ignore[attr-defined]
         skills_text = extensions.skills_prompt(ctx.settings) if "read" in ctx.permissions else ""
-        tool_defs = tools_for(ctx.permissions, bool(ctx.mcp_call), bool(skills_text))
+        tool_defs = tools_for(ctx.permissions, bool(ctx.mcp_call), bool(skills_text), bool(ctx.ask_user), bool(ctx.computer_use))
         schemas = [{"name": t["name"], "description": t["description"], "parameters": t["parameters"]} for t in tool_defs]
         native = prov.tool_support(model)
         mode = "native" if native else "text"
@@ -187,7 +200,10 @@ class AgentRunner:
                 return {"status": "completed", "summary": visible or res.text, "verification": "", "steps": step,
                         "usage": usage_total, "note": "Agent ended without calling finish."}
             for call in calls:
-                await emit("tool_call", {"id": call["id"], "tool": call["name"], "args": _short_args(call["arguments"])})
+                shown_args = _short_args(call["arguments"])
+                if call["name"] == "computer_type":
+                    shown_args = {"text": f"[{len(str(call['arguments'].get('text') or ''))} characters]"}
+                await emit("tool_call", {"id": call["id"], "tool": call["name"], "args": shown_args})
                 t1 = time.perf_counter()
                 out = await execute(ctx, call["name"], call["arguments"])
                 await emit("tool_result", {"id": call["id"], "tool": call["name"], "ok": out["ok"],
@@ -199,6 +215,8 @@ class AgentRunner:
                     msgs.append({"role": "tool", "tool_call_id": call["id"], "name": call["name"], "content": out["output"]})
                 else:
                     msgs.append({"role": "user", "content": f"TOOL RESULT ({call['name']}, ok={out['ok']}):\n{out['output']}"})
+                if out.get("image"):
+                    msgs.append({"role": "user", "content": [{"type": "text", "text": "Current screen capture. Analyze this frame before choosing the next action."}, out["image"]]})
                 if ctx.finished:
                     break
             checkpoint(step, {"files_changed": sorted(ctx.files_changed), "commands": ctx.commands_run[-20:],

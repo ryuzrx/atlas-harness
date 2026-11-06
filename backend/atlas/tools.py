@@ -10,6 +10,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
+from urllib.parse import urlsplit
 
 from . import extensions, gitops
 from .security import (PermissionDenied, classify_command, resolve_in_workspace, sandbox_wrap, scrubbed_env,
@@ -29,6 +30,7 @@ PERMISSION_GROUPS = {
     "memory": "Write team and project memory",
     "messages": "Send structured messages to teammates",
     "mcp": "Call authorized MCP integration tools",
+    "computer": "Observe and control Mac apps when Atlas Computer Use is enabled",
 }
 
 
@@ -45,6 +47,8 @@ class ToolContext:
     files_changed: set = field(default_factory=set)
     commands_run: List[Dict[str, Any]] = field(default_factory=list)
     finished: Optional[Dict[str, Any]] = None
+    ask_user: Optional[Callable[[str, List[str]], Awaitable[str]]] = None
+    computer_use: Optional[Callable[[str, Dict[str, Any]], Awaitable[Dict[str, Any]]]] = None
 
     def path(self, rel: str) -> Path:
         return resolve_in_workspace(self.workspace, rel, block_secrets=bool(self.settings.get("permissions.block_secret_files", True)))
@@ -270,6 +274,55 @@ async def t_finish(ctx: ToolContext, summary: str, status: str = "completed", ve
     return "Task marked finished."
 
 
+async def t_ask_user(ctx: ToolContext, question: str, choices: Optional[List[str]] = None) -> str:
+    if not ctx.ask_user:
+        raise ToolError("Questions are unavailable for this run.")
+    question = str(question or "").strip()
+    if not question or len(question) > 1000:
+        raise ToolError("question must contain 1 to 1000 characters.")
+    if choices is not None and not isinstance(choices, list):
+        raise ToolError("choices must be a list of up to 8 short strings.")
+    if len(choices or []) > 8:
+        raise ToolError("choices is limited to 8 entries.")
+    choices = [str(x).strip()[:160] for x in (choices or []) if str(x).strip()][:8]
+    return await ctx.ask_user(question, choices)
+
+
+async def _computer(ctx: ToolContext, action: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    if not ctx.computer_use:
+        raise ToolError("Atlas Computer Use is not enabled for this chat.")
+    return await ctx.computer_use(action, args)
+
+
+async def t_computer_capture(ctx: ToolContext) -> Dict[str, Any]:
+    return await _computer(ctx, "capture", {})
+
+
+async def t_computer_open_preview(ctx: ToolContext, url: str) -> Dict[str, Any]:
+    parsed = urlsplit(str(url or ""))
+    if parsed.scheme != "http" or (parsed.hostname or "").lower() not in ("localhost", "127.0.0.1", "::1") or parsed.username or parsed.password:
+        raise ToolError("Only local http://localhost preview URLs can be opened by this tool.")
+    return await _computer(ctx, "open_preview", {"url": url[:2000]})
+
+
+async def t_computer_click(ctx: ToolContext, x: float, y: float, button: str = "left") -> Dict[str, Any]:
+    return await _computer(ctx, "click", {"x": x, "y": y, "button": button})
+
+
+async def t_computer_type(ctx: ToolContext, text: str) -> Dict[str, Any]:
+    if len(text) > 1000:
+        raise ToolError("Text entry is limited to 1000 characters per action.")
+    return await _computer(ctx, "type", {"text": text})
+
+
+async def t_computer_key(ctx: ToolContext, key: str) -> Dict[str, Any]:
+    return await _computer(ctx, "key", {"key": key})
+
+
+async def t_computer_scroll(ctx: ToolContext, x: float, y: float, delta_y: int) -> Dict[str, Any]:
+    return await _computer(ctx, "scroll", {"x": x, "y": y, "delta_y": delta_y})
+
+
 async def t_skill(ctx: ToolContext, name: str) -> str:
     body = extensions.read_skill(ctx.settings, name)
     if body is None:
@@ -333,6 +386,27 @@ TOOLS: List[Dict[str, Any]] = [
     {"name": "mcp", "group": "mcp", "handler": t_mcp,
      "description": "Call an authorized MCP integration tool by its qualified name (server/tool).",
      "parameters": _obj({"tool": S, "arguments": {"type": "object"}}, ["tool"])},
+    {"name": "ask_user", "group": None, "handler": t_ask_user,
+     "description": "Pause and ask the user for missing context. Use only when their answer is needed to continue.",
+     "parameters": _obj({"question": S, "choices": {"type": "array", "items": S, "maxItems": 8}}, ["question"])},
+    {"name": "computer_capture", "group": "computer", "handler": t_computer_capture,
+     "description": "Capture the current visible Mac screen. Returns an ephemeral screenshot for visual analysis.",
+     "parameters": _obj({}, [])},
+    {"name": "computer_open_preview", "group": "computer", "handler": t_computer_open_preview,
+     "description": "Open a local http://localhost build preview in the default browser.",
+     "parameters": _obj({"url": S}, ["url"])},
+    {"name": "computer_click", "group": "computer", "handler": t_computer_click,
+     "description": "Click a visible point on screen coordinates returned by computer_capture.",
+     "parameters": _obj({"x": {"type": "number"}, "y": {"type": "number"}, "button": S}, ["x", "y"])},
+    {"name": "computer_type", "group": "computer", "handler": t_computer_type,
+     "description": "Type text into the currently focused control (maximum 1000 characters).",
+     "parameters": _obj({"text": S}, ["text"])},
+    {"name": "computer_key", "group": "computer", "handler": t_computer_key,
+     "description": "Press a supported key or modifier chord, such as ENTER, TAB, ESC, or CMD+L.",
+     "parameters": _obj({"key": S}, ["key"])},
+    {"name": "computer_scroll", "group": "computer", "handler": t_computer_scroll,
+     "description": "Scroll a visible screen region.",
+     "parameters": _obj({"x": {"type": "number"}, "y": {"type": "number"}, "delta_y": I}, ["x", "y", "delta_y"])},
     {"name": "finish", "group": None, "handler": t_finish,
      "description": "Call when the task is done. Give a factual summary of what changed and how it was verified. "
                     "status: completed | failed | blocked.",
@@ -342,13 +416,18 @@ TOOLS: List[Dict[str, Any]] = [
 TOOL_MAP = {t["name"]: t for t in TOOLS}
 
 
-def tools_for(permissions: List[str], has_mcp: bool, has_skills: bool = False) -> List[Dict[str, Any]]:
+def tools_for(permissions: List[str], has_mcp: bool, has_skills: bool = False,
+              has_user_questions: bool = False, has_computer_use: bool = False) -> List[Dict[str, Any]]:
     out = []
     for t in TOOLS:
         if t["group"] is None or t["group"] in permissions:
             if t["name"] == "mcp" and not has_mcp:
                 continue
             if t["name"] == "skill" and not has_skills:
+                continue
+            if t["name"] == "ask_user" and not has_user_questions:
+                continue
+            if t["group"] == "computer" and not has_computer_use:
                 continue
             out.append(t)
     return out
@@ -370,6 +449,9 @@ async def execute(ctx: ToolContext, name: str, args: Dict[str, Any]) -> Dict[str
         if blocked:
             return {"ok": False, "output": f"Blocked by a PreToolUse hook: {blocked}", "denied": True}
         output = await t["handler"](ctx, **clean)
+        if isinstance(output, dict) and "output" in output:
+            await extensions.run_hooks("PostToolUse", name, clean, str(output["output"])[:4000], ctx.workspace, ctx.settings)
+            return {"ok": True, **output, "output": str(output["output"])}
         await extensions.run_hooks("PostToolUse", name, clean, str(output)[:4000], ctx.workspace, ctx.settings)
         return {"ok": True, "output": output}
     except PermissionDenied as e:

@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
 import { WifiOff } from "lucide-react";
-import { TOKEN, useApi, useConnected } from "./api";
+import { api, computerNativeCall, TOKEN, useApi, useConnected } from "./api";
 import { matches, useStore } from "./store";
 import { Sidebar } from "./components/Sidebar";
 import { Inspector } from "./components/Inspector";
@@ -20,6 +20,33 @@ const Projects = lazy(() => import("./views/Projects").then((m) => ({ default: m
 const Models = lazy(() => import("./views/Models").then((m) => ({ default: m.Models })));
 const Activity = lazy(() => import("./views/Activity").then((m) => ({ default: m.Activity })));
 const Settings = lazy(() => import("./views/Settings").then((m) => ({ default: m.Settings })));
+
+function ComputerUseBridge() {
+  useEffect(() => {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      if (stopped) return;
+      try {
+        const request = await api<any>("/computer/next");
+        if (request && !stopped) {
+          const state = await api<{ active: boolean }>(`/computer/${encodeURIComponent(request.id)}/active`);
+          if (state.active && !stopped) {
+            const result = await computerNativeCall(request.id, request.action);
+            if (!stopped) await api(`/computer/${encodeURIComponent(request.id)}/respond`, { body: { result } });
+          }
+        }
+      } catch { /* a cancelled task or temporary reload will be retried by the next poll */ }
+      if (!stopped) timer = setTimeout(poll, 400);
+    };
+    void poll();
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+  return null;
+}
 
 export function App() {
   const store = useStore();
@@ -101,6 +128,7 @@ export function App() {
             <WifiOff size={13} className="text-bad" />Reconnecting to the local backend…</div>
         )}
         <ModelDownloads />
+      <ComputerUseBridge />
       </main>
       {store.settingsOpen && <Suspense fallback={null}><Settings /></Suspense>}
       <NewTaskModal />

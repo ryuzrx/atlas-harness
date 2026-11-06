@@ -19,6 +19,7 @@ from . import __version__, gitops, monitor
 from . import importers
 from .chat import ChatError, ChatService
 from . import extensions, skillhub, team_advisor
+from .computer_use import ComputerUseBroker, ComputerUseError
 from .config import DEFAULT_SETTINGS
 from .db import DB, new_id, now
 from .events import EventBus
@@ -52,6 +53,7 @@ class State:
     chat: ChatService
     pull_tasks: Dict[str, asyncio.Task]
     active_pulls: Dict[str, Dict[str, Any]]
+    computer: ComputerUseBroker
 
 
 S = State()
@@ -66,7 +68,8 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
         S.router.ensure_defaults()
         S.mcp = MCPManager()
         S.mcp.configure(S.db.setting("integrations.mcp_servers") or [])
-        S.orch = Orchestrator(S.db, S.bus, S.router, S.mcp)
+        S.computer = ComputerUseBroker()
+        S.orch = Orchestrator(S.db, S.bus, S.router, S.mcp, S.computer)
         S.orch.start()
         S.chat = ChatService(S.db, S.bus, S.router, S.orch)
         S.pull_tasks = {}
@@ -1177,6 +1180,31 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
         try:
             return S.orch.decide(aid, bool(body.get("approved")), body.get("note", ""))
         except InvalidTransition as e:
+            err(e, 409)
+
+    @app.post("/api/approvals/{aid}/answer")
+    async def answer_question(aid: str, body: Dict[str, Any] = Body(...)):
+        try:
+            return S.orch.answer_question(aid, body.get("answer", ""))
+        except InvalidTransition as e:
+            err(e, 409)
+        except ValueError as e:
+            err(e, 400)
+
+    @app.get("/api/computer/next")
+    async def next_computer_request():
+        return await S.computer.next_request()
+
+    @app.get("/api/computer/{rid}/active")
+    async def computer_request_active(rid: str):
+        return {"active": S.computer.is_active(rid)}
+
+    @app.post("/api/computer/{rid}/respond")
+    async def respond_computer_request(rid: str, body: Dict[str, Any] = Body(...)):
+        try:
+            S.computer.respond(rid, body.get("result"))
+            return {"ok": True}
+        except ComputerUseError as e:
             err(e, 409)
 
     @app.get("/api/events")

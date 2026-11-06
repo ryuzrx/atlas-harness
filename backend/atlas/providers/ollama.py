@@ -104,6 +104,14 @@ class OllamaProvider(Provider):
             return "tools" in cached["capabilities"]
         return super().tool_support(model)
 
+    def vision_support(self, model: str) -> Optional[bool]:
+        probed = (self.config.get("model_caps") or {}).get(model) or {}
+        if "vision" in probed:
+            return probed["vision"]
+        cached = self._show_cache.get(model)
+        caps = cached.get("capabilities") if cached else None
+        return ("vision" in caps) if isinstance(caps, list) else None
+
     async def ensure_caps(self, model: str) -> None:
         try:
             await self.show(model)

@@ -18,7 +18,8 @@ import { ExecutionViewer } from "../components/Execution";
 // ---------------------------------------------------------------- types & config
 export interface ChatConfig {
   mode?: "model" | "agent" | "team"; provider_id?: string; model?: string; agent_id?: string; team_id?: string;
-  tools?: string[]; project_id?: string; system?: string; temperature?: number | null;
+  tools?: string[]; project_id?: string; access_level?: "read_only" | "workspace" | "computer_use";
+  computer_consent_for?: string; system?: string; temperature?: number | null;
 }
 interface ChatMessage {
   id: string; conversation_id: string; role: "user" | "assistant"; content: string;
@@ -185,6 +186,43 @@ function ToolsMenu({ cfg, set, h, groups }: { cfg: ChatConfig; set: (p: ChatConf
   );
 }
 
+function AccessMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => void; h: ReturnType<typeof useHarnessData> }) {
+  const [open, setOpen] = useState(false);
+  const level = cfg.access_level || "workspace";
+  const agent = cfg.mode === "agent" ? h.agents.find((a) => a.id === cfg.agent_id) : undefined;
+  const provider = h.providers.find((p) => p.id === (agent?.provider_id || cfg.provider_id));
+  const modelName = agent?.model || cfg.model;
+  const model = h.models.find((m) => m.provider_id === provider?.id && m.name === modelName);
+  const computerReady = cfg.mode !== "team" && !provider?.agentic && model?.capabilities?.vision === true && model?.capabilities?.tools === true;
+  const consentKey = `${provider?.id || ""}:${modelName || ""}:${provider?.base_url || ""}`;
+  // A loopback endpoint can proxy requests to a hosted service. Only the bundled/default Ollama
+  // connection is treated as local; every custom endpoint gets the screenshot disclosure.
+  const localProvider = provider?.kind === "ollama" && !provider.base_url;
+  const options = [
+    { id: "read_only" as const, label: "Read only", hint: "Read project files and search. No edits or commands." },
+    { id: "workspace" as const, label: "Workspace", hint: "Use the selected tools within this project." },
+  ];
+  const enableComputerUse = () => {
+    if (!computerReady) return;
+    const hosted = !localProvider;
+    if (hosted && cfg.computer_consent_for !== consentKey) {
+      const approved = window.confirm(`Atlas Computer Use will capture your screen and send frames to ${provider?.name} (${modelName}) for this chat. Stop prevents the next action; an action already sent to macOS may finish. Continue?`);
+      if (!approved) return;
+      set({ access_level: "computer_use", computer_consent_for: consentKey });
+    } else set({ access_level: "computer_use" });
+    setOpen(false);
+  };
+  return <div className="relative">
+    <Chip icon={<SlidersHorizontal size={15} strokeWidth={1.6} />} label={level === "read_only" ? "Read only" : level === "computer_use" ? "Atlas Computer Use" : "Workspace"} open={open} onClick={() => setOpen((v) => !v)} />
+    <Popover open={open} onClose={() => setOpen(false)} width={300}>
+      <MenuLabel>Access for this chat</MenuLabel>
+      {options.map((o) => <MenuRow key={o.id} active={level === o.id} onClick={() => { set({ access_level: o.id }); setOpen(false); }} hint={o.hint}>{o.label}</MenuRow>)}
+      <MenuRow active={level === "computer_use"} disabled={!computerReady} onClick={enableComputerUse}
+        hint={computerReady ? `Use Mac screen and input${localProvider ? " · inference stays on this Mac" : " · screens are shared with provider"}; macOS permissions are required` : "Choose a verified image and tool capable model; team and CLI modes aren't available yet."}>Atlas Computer Use</MenuRow>
+    </Popover>
+  </div>;
+}
+
 // ---------------------------------------------------------------- composer
 export interface Attachment { name: string; content: string; size: number; type?: string }
 
@@ -305,6 +343,7 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
           className="h-8 w-8 rounded-full flex items-center justify-center text-ink-2 hover:text-ink hover:bg-hover shrink-0"><Plus size={18} strokeWidth={1.6} /></button>
         <AgentMenu cfg={cfg} set={setCfg} h={h} />
         <ModelMenu cfg={cfg} set={setCfg} h={h} />
+        <AccessMenu cfg={cfg} set={setCfg} h={h} />
         <ToolsMenu cfg={cfg} set={setCfg} h={h} groups={meta?.permission_groups || {}} />
         <div className="flex-1" />
         {busy ? (
@@ -323,6 +362,26 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
 // ---------------------------------------------------------------- run panels
 function ApprovalCard({ a }: { a: Approval }) {
   const { busy, run } = useAction();
+  const [answer, setAnswer] = useState("");
+  if (a.kind === "user_question") {
+    const sendAnswer = () => {
+      const value = answer.trim();
+      if (value) void run(a.id, () => api(`/approvals/${a.id}/answer`, { body: { answer: value } }));
+    };
+    return <div className="rounded-xl border border-[var(--ring)]/35 bg-surface p-3.5">
+      <div className="flex items-center gap-2 text-sm text-ink"><Sparkles size={14} className="text-[var(--ring)]" />
+        <span className="font-medium">Atlas needs your input</span>{a.agent_name && <span className="text-ink-3">· {a.agent_name}</span>}</div>
+      <p className="mt-2 text-sm text-ink-2 whitespace-pre-wrap">{a.payload?.question || "What would you like Atlas to know?"}</p>
+      {!!a.payload?.choices?.length && <div className="mt-2 flex flex-wrap gap-1.5">{a.payload.choices.map((choice: string) =>
+        <button key={choice} onClick={() => setAnswer(choice)} aria-pressed={answer === choice}
+          className={cx("rounded-full border px-2.5 py-1 text-xs text-ink-2 hover:bg-hover", answer === choice && "border-[var(--ring)] bg-hover text-ink")}>{choice}</button>)}</div>}
+      <textarea value={answer} onChange={(e) => setAnswer(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAnswer(); } }}
+        rows={2} maxLength={4000} placeholder="Your answer…" aria-label="Answer Atlas's question"
+        className="mt-2 w-full resize-y rounded-lg border border-line bg-base px-3 py-2 text-sm text-ink placeholder:text-ink-3 outline-none focus:border-line-strong" />
+      <div className="mt-2 flex justify-end"><button onClick={sendAnswer} disabled={!!busy || !answer.trim()}
+        className="h-8 rounded-md bg-ink px-3.5 text-sm font-medium text-[var(--base)] hover:opacity-90 disabled:opacity-40">{busy ? "Continuing…" : "Continue"}</button></div>
+    </div>;
+  }
   const decide = (approved: boolean) => run(a.id, () => api(`/approvals/${a.id}`, { body: { approved } }));
   const cmd = a.payload?.command || a.payload?.title;
   return (
@@ -386,6 +445,7 @@ function RunPanel({ taskId }: { taskId: string }) {
           {isTeam ? <Users size={15} strokeWidth={1.6} className="text-ink-2 shrink-0" /> : <Bot size={15} strokeWidth={1.6} className="text-ink-2 shrink-0" />}
           <span className="text-sm text-ink font-medium shrink-0">{isTeam ? t.team_name || "Team" : t.agent_name || "Agent"}</span>
           <span className="text-sm text-ink-2 truncate">{isTeam && kids.length ? `${done}/${kids.length} tasks` : t.title}</span>
+          {t.config?.access_level === "computer_use" && <span className="shrink-0 rounded-full bg-hover px-2 py-0.5 text-[10px] text-ink-2">Atlas Computer Use</span>}
           {live && <AnimatedMark size={16} play="shimmer" className="shrink-0" />}
         </button>
         <StatusBadge status={t.status} />
@@ -530,6 +590,11 @@ function ChatInner({ id }: { id?: string }) {
 
   const setCfg = (p: ChatConfig) => {
     const next = { ...cfg, ...p };
+    const modelChanged = ["mode", "provider_id", "model", "agent_id", "team_id"].some((key) => (cfg as any)[key] !== (next as any)[key]);
+    if (modelChanged && cfg.access_level === "computer_use") {
+      next.access_level = "workspace";
+      next.computer_consent_for = undefined;
+    }
     setDraft(next); saveDraft(next);
     if (id && conv) { setData({ ...conv, config: next }); api(`/conversations/${id}`, { method: "PATCH", body: { config: next } }).catch(() => {}); }
   };
