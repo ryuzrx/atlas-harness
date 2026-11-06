@@ -44,6 +44,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKSc
         buildMenu()
         buildWindow()
         companion = CompanionController(token: token) { [weak self] in self?.showMainWindow() }
+        companion?.state.openPath = { [weak self] path in
+            self?.showMainWindow()
+            self?.webView.evaluateJavaScript("location.hash = '#\(path)'")
+        }
         companion?.state.openChat = { [weak self] id in
             self?.showMainWindow()
             self?.webView.evaluateJavaScript("location.hash = '#/chat/\(id)'")

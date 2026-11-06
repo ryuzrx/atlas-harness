@@ -67,6 +67,7 @@ final class Companion: ObservableObject {
     }
     private var modelsAt = Date.distantPast
     var openChat: ((String) -> Void)?
+    var openPath: ((String) -> Void)?   // e.g. "/chat", "/projects": opens the main window there
     private var chatTimer: Timer?
 
     var onChange: (() -> Void)?
@@ -1029,6 +1030,60 @@ final class IslandPanel: NSPanel {
     }
 }
 
+// MARK: - Menu bar header
+
+/// The Atlas logo: two strokes (from the 40 x 28 brand mark).
+struct AtlasMark: Shape {
+    func path(in r: CGRect) -> Path {
+        let sx = r.width / 40, sy = r.height / 28
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: r.minX + x * sx, y: r.minY + y * sy) }
+        var p = Path()
+        p.move(to: pt(0, 28)); p.addLine(to: pt(13, 0)); p.addLine(to: pt(21, 0)); p.addLine(to: pt(8, 28)); p.closeSubpath()
+        p.move(to: pt(23.6, 5.2)); p.addLine(to: pt(39, 28)); p.addLine(to: pt(29.6, 28)); p.addLine(to: pt(19.9, 13.2)); p.closeSubpath()
+        return p
+    }
+}
+
+struct MenuHeaderView: View {
+    @ObservedObject var c: Companion
+    let otherIsland: String?
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 11) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.primary.opacity(0.08))
+                AtlasMark().fill(Color.primary).frame(width: 18, height: 12.6)
+            }
+            .frame(width: 34, height: 34)
+            .overlay(alignment: .bottomTrailing) { statusDot.offset(x: 2, y: 2) }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text("Atlas").font(.system(size: 13, weight: .semibold))
+                    if let other = otherIsland {
+                        Text("notch: \(other)").font(.system(size: 10, weight: .medium)).foregroundColor(.secondary)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Capsule().fill(Color.primary.opacity(0.07)))
+                    }
+                }
+                Text(c.status).font(.system(size: 12)).foregroundColor(.secondary).lineLimit(1)
+                if !c.ticker.isEmpty {
+                    Text(c.ticker).font(.system(size: 11, design: .monospaced)).foregroundColor(.secondary.opacity(0.8)).lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 6)
+        .frame(width: 300, alignment: .leading)
+    }
+
+    @ViewBuilder private var statusDot: some View {
+        let color: Color = c.mood == .needsYou ? .orange : (c.mood == .working || c.mood == .thinking) ? .green : c.mood == .done ? .blue : .gray
+        Circle().fill(color).frame(width: 9, height: 9)
+            .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 2))
+    }
+}
+
 // MARK: - Geometry & hover
 
 enum IslandGeometry {
@@ -1194,9 +1249,10 @@ final class CompanionController: NSObject, NSMenuDelegate {
         if state.cornerMode != corner { state.cornerMode = corner }
 
         if let button = statusItem?.button {
-            button.image = CompanionController.orbIcon(filled: state.mood != .idle)
+            button.image = CompanionController.atlasIcon(mood: state.mood)
             button.imagePosition = .imageLeading
-            button.title = state.items.isEmpty ? "" : " \(state.items.count)"
+            button.attributedTitle = NSAttributedString(string: state.items.isEmpty ? "" : "\(state.items.count)",
+                attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold), .baselineOffset: 0.5])
             button.toolTip = "Atlas · \(state.status)"
         }
         // own the notch while busy/peeking; when another island app runs, appear only for decisions
@@ -1211,19 +1267,37 @@ final class CompanionController: NSObject, NSMenuDelegate {
         }
     }
 
-    static func orbIcon(filled: Bool) -> NSImage {
-        let image = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in
-            let ring = NSBezierPath(ovalIn: rect.insetBy(dx: 3, dy: 3))
-            NSColor.black.setStroke()
-            ring.lineWidth = 1.5
-            ring.stroke()
-            if filled {
-                NSColor.black.setFill()
-                NSBezierPath(ovalIn: rect.insetBy(dx: 5.5, dy: 5.5)).fill()
+    /// The Atlas mark (two strokes) as a template image for the menu bar, with a small dot while
+    /// Atlas is working and a filled ring when something needs you.
+    static func atlasIcon(mood: Mood) -> NSImage {
+        let size = NSSize(width: 22, height: 16)
+        let image = NSImage(size: size, flipped: true) { _ in
+            // logo paths from the Atlas mark (viewBox 40 x 28), scaled into 15 x 10.5 at the left
+            let k: CGFloat = 0.375, ox: CGFloat = 0.5, oy: CGFloat = 2.75
+            func pt(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: ox + x * k, y: oy + y * k) }
+            NSColor.black.setFill()
+            let a = NSBezierPath()
+            a.move(to: pt(0, 28)); a.line(to: pt(13, 0)); a.line(to: pt(21, 0)); a.line(to: pt(8, 28)); a.close(); a.fill()
+            let b = NSBezierPath()
+            b.move(to: pt(23.6, 5.2)); b.line(to: pt(39, 28)); b.line(to: pt(29.6, 28)); b.line(to: pt(19.9, 13.2)); b.close(); b.fill()
+            switch mood {
+            case .working, .thinking:
+                NSBezierPath(ovalIn: NSRect(x: 17, y: 10, width: 4.5, height: 4.5)).fill()
+            case .needsYou:
+                let ring = NSBezierPath(ovalIn: NSRect(x: 16.25, y: 9.25, width: 5.5, height: 5.5))
+                ring.lineWidth = 1.5; ring.stroke()
+                NSBezierPath(ovalIn: NSRect(x: 18, y: 11, width: 2, height: 2)).fill()
+            case .done:
+                let tick = NSBezierPath()
+                tick.move(to: NSPoint(x: 16.5, y: 12)); tick.line(to: NSPoint(x: 18.3, y: 13.8)); tick.line(to: NSPoint(x: 21.5, y: 9.8))
+                tick.lineWidth = 1.5; tick.lineCapStyle = .round; tick.lineJoinStyle = .round; tick.stroke()
+            case .idle:
+                break
             }
             return true
         }
-        image.isTemplate = true
+        image.isTemplate = true   // follows the menu bar's light/dark and highlight colors
+        image.accessibilityDescription = "Atlas"
         return image
     }
 
@@ -1231,14 +1305,23 @@ final class CompanionController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        let header = NSMenuItem(title: state.ticker.isEmpty ? state.status : "\(state.status) · \(state.ticker)", action: nil, keyEquivalent: "")
-        header.isEnabled = false
+        menu.autoenablesItems = false
+
+        // header: the mark, what Atlas is doing, and the latest step
+        let header = NSMenuItem()
+        let host = NSHostingView(rootView: MenuHeaderView(c: state, otherIsland: otherIsland))
+        host.frame = NSRect(x: 0, y: 0, width: 300, height: host.fittingSize.height)
+        header.view = host
         menu.addItem(header)
+
         if !state.items.isEmpty {
             menu.addItem(.separator())
+            menu.addItem(sectionTitle(state.items.count == 1 ? "Needs you" : "Needs you · \(state.items.count)"))
             for item in state.items.prefix(8) {
-                let title = item.title.count > 60 ? String(item.title.prefix(57)) + "…" : item.title
+                let title = item.title.count > 54 ? String(item.title.prefix(51)) + "…" : item.title
                 let row = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+                row.image = symbol(item.isQuestion ? "questionmark.bubble" : item.command != nil ? "terminal" : "checkmark.shield")
+                if !item.context.isEmpty { row.toolTip = item.context }
                 let sub = NSMenu()
                 if !item.context.isEmpty {
                     let ctx = NSMenuItem(title: item.context, action: nil, keyEquivalent: "")
@@ -1248,35 +1331,64 @@ final class CompanionController: NSObject, NSMenuDelegate {
                 }
                 if item.isQuestion {
                     for choice in item.choices.prefix(4) {
-                        sub.addItem(action("Answer “\(choice)”", #selector(answerChoice(_:)), [item.id, choice]))
+                        sub.addItem(action("Answer “\(choice)”", #selector(answerChoice(_:)), [item.id, choice], symbol: "arrowshape.turn.up.left"))
                     }
-                    sub.addItem(action("Answer in the island…", #selector(openIsland(_:)), item.id))
+                    sub.addItem(action("Answer in the island…", #selector(openIsland(_:)), item.id, symbol: "text.bubble"))
                 } else {
-                    sub.addItem(action("Allow", #selector(approve(_:)), item.id))
-                    if item.command != nil { sub.addItem(action("Always allow this command", #selector(always(_:)), item.id)) }
-                    sub.addItem(action("Deny", #selector(deny(_:)), item.id))
+                    sub.addItem(action("Allow", #selector(approve(_:)), item.id, symbol: "checkmark"))
+                    if item.command != nil {
+                        sub.addItem(action("Always allow this command", #selector(always(_:)), item.id, symbol: "checkmark.seal"))
+                    }
+                    sub.addItem(action("Deny", #selector(deny(_:)), item.id, symbol: "xmark"))
+                    sub.addItem(.separator())
+                    sub.addItem(action("Show in the island", #selector(openIsland(_:)), item.id, symbol: "capsule"))
                 }
                 row.submenu = sub
                 menu.addItem(row)
             }
         }
+
         menu.addItem(.separator())
-        let island = action(otherIsland.map { "Show Dynamic Island (notch used by \($0))" } ?? "Show Dynamic Island", #selector(toggleIsland), nil)
+        menu.addItem(action("New Chat", #selector(newChat), nil, key: "n", symbol: "square.and.pencil"))
+        menu.addItem(action("Ask Atlas in the Island", #selector(askInIsland), nil, key: "k", symbol: "capsule"))
+        menu.addItem(action("Projects", #selector(openProjects), nil, key: "p", symbol: "folder"))
+        menu.addItem(action("Open Atlas", #selector(openAtlas), nil, key: "o", symbol: "macwindow"))
+
+        menu.addItem(.separator())
+        menu.addItem(sectionTitle("Dynamic Island"))
+        let island = action(otherIsland.map { "Show in the notch (paused for \($0))" } ?? "Show in the notch", #selector(toggleIsland), nil, symbol: "capsule.portrait")
         island.state = showIsland ? .on : .off
         menu.addItem(island)
-        let coucou = action("Report runs to Coucou", #selector(toggleCoucou), nil)
+        let coucou = action(state.coucou.available ? "Report runs to Coucou" : "Report runs to Coucou (not running)",
+                            #selector(toggleCoucou), nil, symbol: "dot.radiowaves.left.and.right")
         coucou.state = reportToCoucou ? .on : .off
-        if !state.coucou.available { coucou.title += " (not running)" }
         menu.addItem(coucou)
+
         menu.addItem(.separator())
-        menu.addItem(action("Open Atlas", #selector(openAtlas), nil))
-        menu.addItem(NSMenuItem(title: "Quit Atlas", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        let quit = NSMenuItem(title: "Quit Atlas", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quit.image = symbol("power")
+        menu.addItem(quit)
     }
 
-    private func action(_ title: String, _ selector: Selector, _ payload: Any?) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
+    private func symbol(_ name: String) -> NSImage? {
+        let img = NSImage(systemSymbolName: name, accessibilityDescription: nil)
+        return img?.withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+    }
+
+    private func sectionTitle(_ text: String) -> NSMenuItem {
+        let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        item.attributedTitle = NSAttributedString(string: text.uppercased(), attributes: [
+            .font: NSFont.systemFont(ofSize: 10.5, weight: .semibold), .foregroundColor: NSColor.secondaryLabelColor, .kern: 0.6,
+        ])
+        return item
+    }
+
+    private func action(_ title: String, _ selector: Selector, _ payload: Any?, key: String = "", symbol name: String? = nil) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: selector, keyEquivalent: key)
         item.target = self
         item.representedObject = payload
+        if let name { item.image = symbol(name) }
         return item
     }
 
@@ -1303,4 +1415,12 @@ final class CompanionController: NSObject, NSMenuDelegate {
     @objc private func toggleIsland() { showIsland.toggle() }
     @objc private func toggleCoucou() { reportToCoucou.toggle() }
     @objc private func openAtlas() { state.openApp?() }
+    @objc private func newChat() { state.openPath?("/chat") }
+    @objc private func openProjects() { state.openPath?("/projects") }
+    @objc private func askInIsland() {
+        if state.cornerMode { state.openApp?(); return }
+        if !showIsland { showIsland = true }
+        state.openedAt = Date()
+        state.expanded = true   // opens on the chat (or the pending decision)
+    }
 }
