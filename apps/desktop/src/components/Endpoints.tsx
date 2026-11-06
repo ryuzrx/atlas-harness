@@ -91,7 +91,7 @@ export function isConnected(p: Preset, providers: Provider[]) {
 type TestResult = { ok: boolean; error?: string; count?: number | null; models?: string[]; note?: string; version?: string };
 
 /** Fields + Test + Connect for one preset. Test never saves anything; Connect stores the key in the Keychain. */
-export function ConnectForm({ preset: p, onConnected, compact }: { preset: Preset; onConnected?: (provider: Provider, test: TestResult | null) => void; compact?: boolean }) {
+export function ConnectForm({ preset: p, onConnected, compact, verifyBeforeConnect = false }: { preset: Preset; onConnected?: (provider: Provider, test: TestResult | null) => void; compact?: boolean; verifyBeforeConnect?: boolean }) {
   const [name, setName] = useState(""); const [url, setUrl] = useState(p.base_url || ""); const [key, setKey] = useState("");
   const [models, setModels] = useState(""); const [binary, setBinary] = useState("");
   const [test, setTest] = useState<TestResult | null>(null);
@@ -117,12 +117,21 @@ export function ConnectForm({ preset: p, onConnected, compact }: { preset: Prese
     finally { setTesting(false); }
   };
   const connect = async () => {
-    const r = await run("c", () => api<Provider>("/providers", { body: body() }), `${name || p.label} connected`);
-    if (r) { await api(`/providers/${r.id}/test`, { body: {} }).catch(() => {}); onConnected?.(r, test); }
+    let checked = test;
+    const r = await run("c", async () => {
+      const config = body();
+      if (verifyBeforeConnect) {
+        checked = await api<TestResult>("/providers/test-config", { body: config });
+        setTest(checked);
+        if (!checked.ok) return null;
+      }
+      return api<Provider>("/providers", { body: config });
+    }, verifyBeforeConnect ? undefined : `${name || p.label} connected`);
+    if (r) { await api(`/providers/${r.id}/test`, { body: {} }).catch(() => {}); onConnected?.(r, checked); }
   };
   const missing = (p.needs_key && !key) || (!cli && p.kind !== "anthropic" && p.kind !== "ollama" && !url);
   return (
-    <div className="space-y-3.5">
+    <fieldset disabled={!!busy || testing} className="min-w-0 space-y-3.5">
       {!compact && (
         <div className="flex items-start gap-3">
           <ProviderTile label={p.label} size={42} providerKey={p.id} />
@@ -177,10 +186,10 @@ export function ConnectForm({ preset: p, onConnected, compact }: { preset: Prese
 
       <div className="flex items-center justify-end gap-2 pt-1">
         <Button onClick={runTest} disabled={missing || testing} busy={testing}>Test</Button>
-        <Button variant="primary" onClick={connect} disabled={missing} busy={busy === "c"}>{test?.ok ? "Connect" : "Connect anyway"}</Button>
+        <Button variant="primary" onClick={connect} disabled={missing || testing} busy={busy === "c"}>{verifyBeforeConnect ? "Test and connect" : test?.ok ? "Connect" : "Connect anyway"}</Button>
       </div>
       {!test && !missing && <div className="-mt-2 text-right text-xs text-ink-3">Test checks the endpoint without saving anything.</div>}
-    </div>
+    </fieldset>
   );
 }
 

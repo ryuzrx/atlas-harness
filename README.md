@@ -31,6 +31,7 @@
 | Stream replies, attach files, and choose the tools a conversation can use. | Connect endpoints, browse local models, and manage downloads in one place. | Start from a template, choose models by role, and follow each agent's work. | Give agents a project folder, review their changes, and approve actions that need permission. |
 
 - **Local models and optional cloud connections.** Use Ollama, MLX, llama.cpp, LM Studio, compatible servers, or cloud providers with your own credentials.
+- **Free-model setup.** First-launch setup offers nine providers with free tiers, evaluation access, monthly credits, or trials. Connect your own key, check the provider's current limits, and pick a model for your first chat.
 - **Claude Code and Codex.** Use their existing sign-in. The chat picker shows readable model names and descriptions; Codex can load its local model catalog. Exact model IDs are supported too.
 - **Simple team management.** Search teams and agents, assign missing models, pause or resume an agent, and keep tasks, activity, and results together.
 - **Make it yours.** Choose a name, profile photo, workspace label, greeting, theme, and launch-animation preference during setup.

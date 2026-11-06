@@ -7,6 +7,7 @@ import { Avatar, useProfile } from "./Profile";
 import { AnimatedMark } from "./AnimatedMark";
 import { Markdown } from "./Markdown";
 import { ConnectForm, isConnected, Preset, ProviderTile } from "./Endpoints";
+import { FREE_MODEL_PROVIDERS, starterModels } from "./freeModels";
 import { ModelFolder } from "./ModelFolder";
 import { TeamAdvisor } from "./TeamAdvisor";
 import { PackGrid } from "./SkillPacks";
@@ -332,18 +333,55 @@ function CloudSetup({ presets, onDone }: { presets: Preset[]; onDone: () => void
 }
 
 function FreeModelSetup({ presets, onDone }: { presets: Preset[]; onDone: () => void }) {
-  const preset = presets.find((p) => p.id === "openrouter");
-  if (!preset) return null;
+  const [id, setId] = useState("openrouter");
+  const options = FREE_MODEL_PROVIDERS.filter((offer) => presets.some((p) => p.id === offer.id));
+  const offer = options.find((o) => o.id === id) || options[0];
+  const preset = presets.find((p) => p.id === offer?.id);
+  if (!preset || !offer) return <p role="status" className="text-sm text-ink-2">Loading provider options…</p>;
   return <div className="space-y-4">
-    <div className="rounded-lg border border-line bg-surface p-4 space-y-2">
-      <div className="text-sm font-medium text-ink">Free online models</div>
-      <p className="text-sm text-ink-2">Connect a free OpenRouter account. Atlas starts with its free model router, which chooses an available zero-cost model.</p>
-      <p className="text-xs text-ink-3">Free models have usage limits and availability can change. Your messages go to OpenRouter and its selected model provider; check their privacy terms before sending sensitive data.</p>
+    <div className="grid grid-cols-3 max-[620px]:grid-cols-2 gap-2" role="group" aria-label="Free model providers">
+      {options.map((o) => {
+        const p = presets.find((p) => p.id === o.id)!;
+        return <button key={o.id} onClick={() => setId(o.id)} aria-pressed={offer.id === o.id}
+          className={cx("flex items-center gap-2 rounded-lg border p-3 text-left", offer.id === o.id ? "border-ink-2 bg-selected" : "border-line bg-surface hover:bg-hover")}>
+          <ProviderTile label={p.label} providerKey={p.id} size={30} />
+          <span className="min-w-0"><span className="block text-sm font-medium text-ink">{p.label}</span><span className="block text-xs text-ink-3">{o.access}</span></span>
+        </button>;
+      })}
     </div>
-    <ConnectForm preset={preset} compact onConnected={(provider) => {
-      setDraftModel(provider.id, "openrouter/free");
+    <div className="rounded-lg border border-line bg-surface p-4 space-y-2">
+      <div className="text-sm font-medium text-ink">{preset.label} · {offer.access}</div>
+      <p className="text-sm text-ink-2">{offer.note}</p>
+      <button onClick={() => openExternal(offer.url)} className="text-xs text-ink-2 underline underline-offset-2">Check current plans and limits</button>
+      <p className="text-xs text-ink-3">Use your own account and API key. Offers can change; paid accounts may be billed. Your code goes to the selected provider.</p>
+    </div>
+    <FreeProviderConnection key={preset.id} preset={preset} onDone={onDone} />
+  </div>;
+}
+
+function FreeProviderConnection({ preset, onDone }: { preset: Preset; onDone: () => void }) {
+  const [provider, setProvider] = useState<Provider | null>(null);
+  const [model, setModel] = useState("");
+  const { data: models, error, reload } = useApi<Model[]>(provider ? "/models" : null, ["model", "provider"]);
+  const choices = starterModels(models || [], provider?.id || "", preset.id);
+  const selected = choices.find((m) => m.name === model);
+  if (!provider) return <ConnectForm preset={preset} compact verifyBeforeConnect onConnected={setProvider} />;
+  return <div className="rounded-lg border border-line bg-surface p-4 space-y-3">
+    <div className="flex items-center gap-2 text-sm text-ink"><Check size={15} />{preset.label} connected</div>
+    <label className="block text-sm font-medium text-ink" htmlFor="free-starter-model">Choose your first model</label>
+    <select id="free-starter-model" value={selected?.name || ""} onChange={(e) => setModel(e.target.value)} disabled={!choices.length}
+      className="w-full h-10 px-3 rounded-md border border-line bg-[var(--base)] text-sm text-ink">
+      <option value="">{!models && !error ? "Loading available models…" : "Select a model"}</option>
+      {choices.map((m) => <option key={m.name} value={m.name!}>{m.name}{m.capabilities?.tools === true ? " · Supports tools" : ""}</option>)}
+    </select>
+    {(!models && !error) ? <p role="status" className="text-xs text-ink-3">Fetching this provider's model list…</p> : !choices.length ?
+      <div role="status" className="text-sm text-ink-2">{error || "No chat models are available on this connection yet."} <button onClick={reload} className="underline">Retry</button></div> :
+      <p className="text-xs text-ink-3">{preset.id === "openrouter" ? "Only free model routes are shown. Choose openrouter/free to let OpenRouter pick an available free model." : "Your provider's catalog may include paid models. Check your plan's free allowance before choosing. Tool support depends on the model."}</p>}
+    <p className="text-xs text-ink-3">Next, add a project folder to let Atlas work with your code.</p>
+    <div className="flex justify-end"><Button variant="primary" disabled={!selected} onClick={() => {
+      setDraftModel(provider.id, selected!.name!);
       onDone();
-    }} />
+    }}>Use this model</Button></div>
   </div>;
 }
 
@@ -401,10 +439,10 @@ export function Welcome() {
     await saveSettings({ "legal.acknowledged": LEGAL_VERSION });
     if (!legalOnly) setStep(1);
   };
-  const finish = async () => {
+  const finish = async (startCoding = false) => {
     setLeaving(true);
     await saveSettings({ "onboarding.completed": true, "legal.acknowledged": LEGAL_VERSION });
-    go({ name: "chat" });
+    go({ name: startCoding ? "projects" : "chat" });
   };
   const choose = (p: Path) => { setPath(p); setStep(p === "explore" ? 4 : 3); };
   const title = useMemo(() => ({ local: "Run models on this Mac", cloud: "Connect an API key", free: "Connect free online models", cli: "Use Claude Code or Codex", explore: "" } as Record<Path, string>), []);
@@ -470,7 +508,7 @@ export function Welcome() {
               <p className="mt-2 text-center text-base text-ink-2">You can add more of these later on the Models page.</p>
               <div className="mt-8 grid gap-2.5">
                 <Option icon={Cpu} title="Run models on this Mac" badge="Private · Free" body="Install Ollama and download an open model. Nothing leaves your computer." onClick={() => choose("local")} />
-                <Option icon={Sparkles} title="Use free online models" badge="Internet required" body="Connect OpenRouter to browse free models. A free account and API key are required; usage limits apply." onClick={() => choose("free")} />
+                <Option icon={Sparkles} title="Start with free online models" badge={`${FREE_MODEL_PROVIDERS.length} providers`} body="Choose OpenRouter, Groq, Gemini, Mistral and more. Free tiers, evaluation access and starter credits, with your own API key." onClick={() => choose("free")} />
                 <Option icon={Cloud} title="Use an API key" badge={`${presets.filter((p) => p.category === "cloud" && p.id !== "custom").length} providers`} body="OpenRouter, OpenAI, Anthropic, Gemini, Groq, DeepSeek and more, with your own key." onClick={() => choose("cloud")} />
                 <Option icon={TerminalSquare} title="Use Claude Code or Codex" body="Run your existing Claude Code or Codex sign-in as Atlas agents." onClick={() => choose("cli")} />
                 <Option icon={Sparkles} title="Just explore" body="Look around first and connect a model whenever you're ready." onClick={() => choose("explore")} />
@@ -479,7 +517,7 @@ export function Welcome() {
 
             {step === 3 && path && path !== "explore" && <>
               <h1 className="text-2xl leading-tight font-semibold tracking-[-0.02em] text-ink">{title[path]}</h1>
-              <p className="mt-1.5 mb-6 text-base text-ink-2">{path === "local" ? "Three quick steps. Everything runs on your Mac." : path === "cloud" ? "Pick a provider, paste your key, and test it before saving." : path === "free" ? "Add a free OpenRouter key and select an online model." : "Atlas looks for the CLIs on this Mac."}</p>
+              <p className="mt-1.5 mb-6 text-base text-ink-2">{path === "local" ? "Three quick steps. Everything runs on your Mac." : path === "cloud" ? "Pick a provider, paste your key, and test it before saving." : path === "free" ? "Choose a provider, connect your key, and pick a model to start building." : "Atlas looks for the CLIs on this Mac."}</p>
               {path === "local" && <LocalSetup onDone={(m) => { if (m) setDraftModel(m.provider_id, m.name); setStep(4); }} />}
               {path === "cloud" && <CloudSetup presets={presets} onDone={() => setStep(4)} />}
               {path === "free" && <FreeModelSetup presets={presets} onDone={() => setStep(4)} />}
@@ -516,7 +554,10 @@ export function Welcome() {
               <div className="mt-4 flex flex-wrap justify-center gap-x-5 gap-y-1 text-xs text-ink-3">
                 {[["⌘N", "New chat"], ["⌘K", "Commands"], ["⌘B", "Sidebar"], ["⌘.", "Stop"]].map(([k, t]) => <span key={k}><kbd className="font-sans text-ink-2">{k}</kbd> {t}</span>)}
               </div>
-              <div className="mt-8 flex justify-center"><Button variant="primary" onClick={finish} className="!h-10 !px-6">Start chatting</Button></div>
+              <div className="mt-8 flex justify-center gap-3">
+                <Button onClick={() => finish()} className="!h-10 !px-6">Start chatting</Button>
+                <Button variant="primary" onClick={() => finish(true)} className="!h-10 !px-6">Start coding</Button>
+              </div>
             </>}
 
             {step > 0 && step < 7 && (

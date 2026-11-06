@@ -1,9 +1,10 @@
 {
   "name": "@atlas/desktop",
   "private": true,
-  "version": "0.5.1",
+  "version": "0.5.2",
   "type": "module",
   "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "dev": "vite",
     "build": "tsc --noEmit -p . && vite build",
     "typecheck": "tsc -b"

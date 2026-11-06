@@ -1,5 +1,13 @@
 # Release notes
 
+## 0.5.2 — 2026-11-06
+
+### Getting started
+
+- First-launch setup offers OpenRouter, Groq, Google Gemini, Mistral, Cohere, NVIDIA NIM, Hugging Face Inference, Cerebras, and Fireworks AI. Free tiers, evaluation access, monthly credits, and one-time trials are labeled separately, with links to current provider limits. Your own account and API key are required.
+- Setup tests the connection before saving and lets you choose a model from the provider's live catalog. OpenRouter setup only lists free model routes. Other providers may list paid models; your account plan controls eligibility and billing.
+- The model you choose during setup carries into your first chat. A new **Start coding** action opens Work so you can choose a project folder.
+
 ## 0.5.1 — 2026-11-06
 
 ### Approvals

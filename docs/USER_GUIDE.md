@@ -60,7 +60,11 @@ Claude Code and Codex run through their own command-line apps and use the accoun
 
 ### Free online models
 
-In the Welcome guide, choose **Use free online models** to connect an OpenRouter key. Atlas selects OpenRouter's `openrouter/free` router, which chooses an available free model. Free-model access is rate limited and availability can change. Messages are sent to OpenRouter and the model provider it routes to; do not send sensitive content unless you have reviewed their current data policies.
+In the Welcome guide, choose **Start with free online models**. The provider picker includes OpenRouter, Groq, Google Gemini, Mistral, Cohere, NVIDIA NIM, Hugging Face Inference, Cerebras, and Fireworks AI. Each card identifies whether the offer is a free tier, evaluation access, monthly credits, or a one-time trial. Check the linked provider terms for current eligibility, model access, limits, expiry, and payment requirements. Trial credits are not an unlimited free service.
+
+Use the provider's key link to create your own account and API key, then choose **Test and connect**. Failed connection tests do not save the provider. After connecting, choose a model from the live catalog and select **Use this model** to carry that choice into your first chat. OpenRouter setup only lists free routes, including `openrouter/free`, which chooses an available free model. Other providers can list paid models too; your account plan determines the free allowance and billing.
+
+Add a project folder in the next step. At the end of setup, **Start coding** opens Work so you can choose your project; **Start chatting** opens a conversation with your selected model. Enable the project tools you want the model to use. Free quotas may run out faster during agent tasks because one task can make multiple model requests. Messages and code are sent to the selected provider under its data policies.
 
 OpenCode's free inference tier is restricted to OpenCode itself, so Atlas cannot call that tier as a regular model endpoint. Use OpenCode directly for its free tier, or use Atlas's OpenRouter option or a local model.
 

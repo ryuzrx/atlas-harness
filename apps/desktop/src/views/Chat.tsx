@@ -597,6 +597,10 @@ function ChatInner({ id }: { id?: string }) {
   // useApi keeps the previous chat's data until the new one arrives; never show chat A under chat B's id.
   const conv = loadedConv && loadedConv.id === id ? loadedConv : undefined;
   const [draft, setDraft] = useState<ChatConfig>(loadDraft);
+  // Chat is mounted behind Welcome; pick up the model chosen there when setup finishes.
+  useEffect(() => {
+    if (!id && settings?.["onboarding.completed"]) setDraft(loadDraft());
+  }, [id, settings?.["onboarding.completed"]]);
   const [live, setLive] = useState<Record<string, string>>({});
   const [drawer, setDrawer] = useState(() => localStorage.getItem("atlas_activity") === "1");
   const [settingsOpen, setSettingsOpen] = useState(false);
