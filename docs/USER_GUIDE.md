@@ -56,6 +56,14 @@ Install and sign in to the CLI you want to use, then add or enable its connectio
 
 The local catalog is a discovery aid, not a guarantee of current account access. Atlas does not expose catalog identity or instruction fields in the model list. A Codex local-model configuration uses its local provider rather than the cloud catalog.
 
+Claude Code and Codex run through their own command-line apps and use the account already signed in there. Atlas does not bypass or increase subscription limits. Complex tasks and multi-agent runs can use more of your plan allowance because the underlying CLI performs the model work.
+
+### Free online models
+
+In the Welcome guide, choose **Use free online models** to connect an OpenRouter key. Atlas selects OpenRouter's `openrouter/free` router, which chooses an available free model. Free-model access is rate limited and availability can change. Messages are sent to OpenRouter and the model provider it routes to; do not send sensitive content unless you have reviewed their current data policies.
+
+OpenCode's free inference tier is restricted to OpenCode itself, so Atlas cannot call that tier as a regular model endpoint. Use OpenCode directly for its free tier, or use Atlas's OpenRouter option or a local model.
+
 ## Chat with a model
 
 Open a new chat and use the model picker in the composer. Search by model or provider name, then select an entry. Your current choice is highlighted when you reopen the picker.
@@ -78,7 +86,9 @@ An agent selected in the composer uses its own model. A team uses the models ass
 
 ## Work on a project
 
-Switch to **Work**, add a project folder, and start a session. The session panel helps inspect project context, the environment, and Git changes.
+Switch to **Work** and choose a source. **Local folder** is selected by default and lets you add a folder already on this Mac. **Git repository** clones a remote into a local folder on this Mac; it is not cloud execution. Opening a project shows a chat-style composer with that folder selected as project context.
+
+The session panel helps inspect project context, the environment, and Git changes.
 
 In a Git project, writing tasks can run on isolated branches and worktrees. Review the diff and merge explicitly when you are satisfied. Atlas checks for conflicts and protects uncommitted work during merges. Non-Git folders have different isolation limits; keep backups and review results.
 

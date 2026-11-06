@@ -30,7 +30,7 @@ export function LegalDoc({ doc, onClose }: { doc: LegalDocId | null; onClose: ()
   );
 }
 
-type Path = "local" | "cloud" | "cli" | "explore";
+type Path = "local" | "cloud" | "free" | "cli" | "explore";
 const DRAFT_KEY = "atlas_chat_draft_cfg";
 const setDraftModel = (provider_id: string, model: string) => {
   try { const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}"); localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...d, mode: "model", provider_id, model })); } catch { /* ignore */ }
@@ -331,6 +331,22 @@ function CloudSetup({ presets, onDone }: { presets: Preset[]; onDone: () => void
   );
 }
 
+function FreeModelSetup({ presets, onDone }: { presets: Preset[]; onDone: () => void }) {
+  const preset = presets.find((p) => p.id === "openrouter");
+  if (!preset) return null;
+  return <div className="space-y-4">
+    <div className="rounded-lg border border-line bg-surface p-4 space-y-2">
+      <div className="text-sm font-medium text-ink">Free online models</div>
+      <p className="text-sm text-ink-2">Connect a free OpenRouter account. Atlas starts with its free model router, which chooses an available zero-cost model.</p>
+      <p className="text-xs text-ink-3">Free models have usage limits and availability can change. Your messages go to OpenRouter and its selected model provider; check their privacy terms before sending sensitive data.</p>
+    </div>
+    <ConnectForm preset={preset} compact onConnected={(provider) => {
+      setDraftModel(provider.id, "openrouter/free");
+      onDone();
+    }} />
+  </div>;
+}
+
 function CliSetup({ presets, onDone }: { presets: Preset[]; onDone: () => void }) {
   const clis = presets.filter((p) => p.kind === "claude_code" || (p.kind === "codex_cli" && !p.config?.oss));
   const { data: providers = [], reload } = useApi<Provider[]>("/providers", ["provider"]);
@@ -391,7 +407,7 @@ export function Welcome() {
     go({ name: "chat" });
   };
   const choose = (p: Path) => { setPath(p); setStep(p === "explore" ? 4 : 3); };
-  const title = useMemo(() => ({ local: "Run models on this Mac", cloud: "Connect an API key", cli: "Use Claude Code or Codex", explore: "" } as Record<Path, string>), []);
+  const title = useMemo(() => ({ local: "Run models on this Mac", cloud: "Connect an API key", free: "Connect free online models", cli: "Use Claude Code or Codex", explore: "" } as Record<Path, string>), []);
   const s = settings || {};
   const { data: teams = [] } = useApi<any[]>(step === 7 ? "/teams" : null, ["team"]);
   const { data: packs = [] } = useApi<{ skills: { installed: boolean }[] }[]>(step === 7 ? "/skillpacks" : null, ["settings"]);
@@ -454,6 +470,7 @@ export function Welcome() {
               <p className="mt-2 text-center text-base text-ink-2">You can add more of these later on the Models page.</p>
               <div className="mt-8 grid gap-2.5">
                 <Option icon={Cpu} title="Run models on this Mac" badge="Private · Free" body="Install Ollama and download an open model. Nothing leaves your computer." onClick={() => choose("local")} />
+                <Option icon={Sparkles} title="Use free online models" badge="Internet required" body="Connect OpenRouter to browse free models. A free account and API key are required; usage limits apply." onClick={() => choose("free")} />
                 <Option icon={Cloud} title="Use an API key" badge={`${presets.filter((p) => p.category === "cloud" && p.id !== "custom").length} providers`} body="OpenRouter, OpenAI, Anthropic, Gemini, Groq, DeepSeek and more, with your own key." onClick={() => choose("cloud")} />
                 <Option icon={TerminalSquare} title="Use Claude Code or Codex" body="Run your existing Claude Code or Codex sign-in as Atlas agents." onClick={() => choose("cli")} />
                 <Option icon={Sparkles} title="Just explore" body="Look around first and connect a model whenever you're ready." onClick={() => choose("explore")} />
@@ -462,9 +479,10 @@ export function Welcome() {
 
             {step === 3 && path && path !== "explore" && <>
               <h1 className="text-2xl leading-tight font-semibold tracking-[-0.02em] text-ink">{title[path]}</h1>
-              <p className="mt-1.5 mb-6 text-base text-ink-2">{path === "local" ? "Three quick steps. Everything runs on your Mac." : path === "cloud" ? "Pick a provider, paste your key, and test it before saving." : "Atlas looks for the CLIs on this Mac."}</p>
+              <p className="mt-1.5 mb-6 text-base text-ink-2">{path === "local" ? "Three quick steps. Everything runs on your Mac." : path === "cloud" ? "Pick a provider, paste your key, and test it before saving." : path === "free" ? "Add a free OpenRouter key and select an online model." : "Atlas looks for the CLIs on this Mac."}</p>
               {path === "local" && <LocalSetup onDone={(m) => { if (m) setDraftModel(m.provider_id, m.name); setStep(4); }} />}
               {path === "cloud" && <CloudSetup presets={presets} onDone={() => setStep(4)} />}
+              {path === "free" && <FreeModelSetup presets={presets} onDone={() => setStep(4)} />}
               {path === "cli" && <CliSetup presets={presets} onDone={() => setStep(4)} />}
             </>}
 

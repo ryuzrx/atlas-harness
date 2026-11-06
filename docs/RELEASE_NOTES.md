@@ -1,5 +1,17 @@
 # Release notes
 
+## 0.3.4 — 2026-11-05
+
+### Projects and models
+
+- Work starts with a local folder, with Git repository cloning available as an alternative. Project sessions use a chat-style composer; Git checkouts remain on this Mac.
+- Welcome can connect OpenRouter's free-model router. Setup explains rate limits and that prompts go to OpenRouter and its selected provider.
+- Corrected the macOS executable target so it matches the advertised macOS 13 minimum.
+
+### Claude Code and Codex
+
+- Both continue to use their own installed CLI and sign-in. Atlas selects the available CLI model but does not alter subscription limits.
+
 ## 0.3.3 — 2026-11-05
 
 ### Interface

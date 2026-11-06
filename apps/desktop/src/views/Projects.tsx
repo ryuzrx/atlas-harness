@@ -4,6 +4,7 @@ import { api, openPath, Project, useApi } from "../api";
 import { useStore } from "../store";
 import { useAddProject } from "../components/useAddProject";
 import { Badge, Button, Card, Empty, useAction } from "../components/ui";
+import { WorkHome } from "./WorkHome";
 
 function GitPanel({ project }: { project: Project }) {
   const { settings } = useStore();
@@ -61,11 +62,18 @@ export function Projects() {
               <h1 className="text-xl leading-[26px] font-semibold tracking-[-0.02em] text-ink truncate">{cur.name}</h1>
               <div className="text-xs text-ink-2 font-mono truncate selectable" title={cur.path}>{cur.path}</div>
             </div>
+            <Badge tone={cur.is_repo ? "ok" : "neutral"}>{cur.is_repo ? "Local Git checkout" : "Local files"}</Badge>
             <Button size="sm" icon={<FolderOpen size={13} />} onClick={() => openPath(cur.path)}>Reveal in Finder</Button>
             <Button size="sm" variant="danger" icon={<Trash2 size={13} />}
               onClick={() => (settings?.["projects.confirm_remove"] === false || confirm(`Remove ${cur.name} from ATLAS? Files are not touched.`)) && run("d", () => api(`/projects/${cur.id}`, { method: "DELETE" }), "Removed").then(() => { reload(); go({ name: "projects" }); })}>Remove</Button>
           </div>
-          {cur.exists ? <GitPanel project={cur} /> : <Card className="p-4 text-bad text-sm">Folder not found. It may have been moved or deleted.</Card>}
+          {cur.exists ? <>
+            <WorkHome key={cur.id} pinnedProjectId={cur.id} />
+            {cur.is_repo && <details className="pt-2">
+              <summary className="cursor-pointer text-sm text-ink-2 hover:text-ink">Git status and history</summary>
+              <div className="mt-3"><GitPanel project={cur} /></div>
+            </details>}
+          </> : <Card className="p-4 text-bad text-sm">Folder not found. It may have been moved or deleted.</Card>}
         </div>)}
     </div>
   );

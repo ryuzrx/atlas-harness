@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import os
+import subprocess
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -834,6 +835,44 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
         p = S.db.insert("projects", {"id": new_id("proj"), "name": body.get("name") or path.name, "path": str(path),
                                      "workspace": body.get("workspace") or "Default", "created_at": now()})
         S.db.audit("user", "project_add", {"path": str(path)})
+        S.bus.changed("project", p["id"])
+        return p
+
+    @app.post("/api/projects/clone")
+    async def clone_project(body: Dict[str, Any] = Body(...)):
+        """Clone a Git remote into a user-chosen local parent directory."""
+        remote = str(body.get("url") or "").strip()
+        parent = Path(str(body.get("parent") or "")).expanduser().resolve()
+        parsed = urlsplit(remote)
+        ssh_scp = remote.startswith("git@") and ":" in remote and " " not in remote
+        valid_https = parsed.scheme == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password
+        valid_ssh = parsed.scheme == "ssh" and bool(parsed.hostname) and parsed.username == "git" and not parsed.password
+        if not (valid_https or valid_ssh or ssh_scp) or "\x00" in remote:
+            raise HTTPException(400, "Enter an HTTPS or SSH Git repository URL.")
+        if not parent.is_dir() or parent == Path("/"):
+            raise HTTPException(400, "Choose an existing parent folder on this Mac.")
+        leaf = remote.rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+        name = leaf[:-4] if leaf.lower().endswith(".git") else leaf
+        if not name or name in (".", "..") or any(ch in name for ch in ("/", "\\", "\x00")):
+            raise HTTPException(400, "That repository URL does not contain a valid project name.")
+        destination = parent / name
+        if destination.exists():
+            raise HTTPException(409, f"A folder named {name} already exists in that location.")
+        env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+        try:
+            result = await asyncio.to_thread(
+                subprocess.run,
+                ["git", "clone", "--", remote, str(destination)],
+                capture_output=True, text=True, timeout=600, env=env,
+            )
+        except subprocess.TimeoutExpired:
+            raise HTTPException(504, "Git clone timed out. Check the remote and try again.")
+        if result.returncode:
+            detail = (result.stderr or "Git could not clone that repository.").strip().splitlines()[-1][:500]
+            raise HTTPException(400, detail)
+        p = S.db.insert("projects", {"id": new_id("proj"), "name": name, "path": str(destination),
+                                     "workspace": "Default", "config": {"source": "git"}, "created_at": now()})
+        S.db.audit("user", "project_clone", {"project": p["id"]})
         S.bus.changed("project", p["id"])
         return p
 
