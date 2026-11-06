@@ -551,21 +551,21 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
         if not need:
             raise HTTPException(400, "Describe what you want to do.")
         ids, reason, source, model_name = team_advisor.heuristic(need), "", "keywords", None
-        choice = routing_for("light") or routing_for("reasoning")
-        if not (choice.get("provider_id") and choice.get("model")):
-            for m in await S.router.models():
-                p = S.router.providers.get(m.get("provider_id"))
-                if m.get("name") and p and not p.agentic and p.enabled:
-                    choice = {"provider_id": m["provider_id"], "model": m["name"]}
-                    break
-        if choice.get("provider_id") and choice.get("model"):
-            try:
+        try:
+            choice = routing_for("light") or routing_for("reasoning")
+            if not (choice.get("provider_id") and choice.get("model")):
+                for m in await S.router.models():
+                    p = S.router.providers.get(m.get("provider_id"))
+                    if m.get("name") and p and not p.agentic and p.row.get("enabled"):
+                        choice = {"provider_id": m["provider_id"], "model": m["name"]}
+                        break
+            if choice.get("provider_id") and choice.get("model"):
                 res = await asyncio.wait_for(S.router.chat(choice["provider_id"], choice["model"], team_advisor.build_messages(need, TEMPLATES), retries=0), 45)
                 parsed = team_advisor.parse_reply(res.text, list(TEMPLATES))
                 if parsed:
                     ids, reason, source, model_name = parsed[0], parsed[1], "ai", choice["model"]
-            except Exception:  # noqa: BLE001 - any model problem falls back to keyword matching
-                pass
+        except Exception:  # noqa: BLE001 - discovery and inference failures use keyword matching
+            pass
         return {"teams": ids, "reason": reason, "source": source, "model": model_name}
 
     @app.post("/api/teams")

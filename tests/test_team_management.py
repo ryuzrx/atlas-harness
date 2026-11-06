@@ -80,3 +80,29 @@ def test_explicit_team_routing_is_preserved(monkeypatch):
         team = result.json()
         agents = client.get(f"/api/agents?team_id={team['id']}", headers=HEADERS).json()
         assert next(a for a in agents if a["is_lead"])["model"] == "custom"
+
+
+def test_team_suggestions_use_connected_provider_without_internal_error(monkeypatch):
+    from atlas.providers.base import ChatResult, Provider
+    with TestClient(create_app("team-management-test")) as client:
+        provider = Provider({"id": "local", "name": "Local", "enabled": 1})
+        monkeypatch.setattr(S.router, "providers", {"local": provider})
+        set_models(monkeypatch, models())
+        async def suggest(*args, **kwargs):
+            return ChatResult(text='{"teams": ["engineering", "qa"], "reason": "Build and review."}')
+        monkeypatch.setattr(S.router, "chat", suggest)
+        response = client.post("/api/teams/suggest", headers=HEADERS, json={"need": "Build an app"})
+        assert response.status_code == 200
+        assert response.json()["source"] == "ai"
+        assert response.json()["teams"] == ["engineering", "qa"]
+
+
+def test_team_suggestions_fall_back_when_model_discovery_fails(monkeypatch):
+    with TestClient(create_app("team-management-test")) as client:
+        async def fail_discovery():
+            raise RuntimeError("Endpoint unavailable")
+        monkeypatch.setattr(S.router, "models", fail_discovery)
+        response = client.post("/api/teams/suggest", headers=HEADERS, json={"need": "Test and secure my code"})
+        assert response.status_code == 200
+        assert response.json()["source"] == "keywords"
+        assert "qa" in response.json()["teams"]
