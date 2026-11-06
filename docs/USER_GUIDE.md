@@ -1,0 +1,123 @@
+# Atlas user guide
+
+[Overview](../README.md) · [Troubleshooting](TROUBLESHOOTING.md) · [Release notes](RELEASE_NOTES.md)
+
+## Set up your workspace
+
+On first launch, review the usage notice and use the welcome guide to choose your preferences and connect a model. You can skip model setup and explore the interface first.
+
+In **Make Atlas yours**, set:
+
+- Your display name and a local profile photo.
+- A workspace label for the sidebar.
+- Light or Dark appearance and interface size.
+- Comfortable or wide chat layout.
+- Enter or Command-Enter to send messages.
+- Full or reduced motion.
+- Launch animation on or off, with a named or Atlas-only greeting.
+- A full sidebar or an icon rail.
+
+Profile details remain on your Mac. Open the profile menu to edit them later. You can reopen the setup guide from **Settings → General → Welcome guide**. Normal launch animations open the app automatically.
+
+## Connect a model
+
+Open **Models → Add endpoint**. Choose the connection type that matches the service you want to use.
+
+### Ollama
+
+Use a local Ollama installation or let Atlas install its managed runtime. Start the service, then browse **Model library** to choose a model. Search by family or company, or use the categories.
+
+The model's download size is not its full memory requirement. A model also needs memory for inference and context. Larger context windows and concurrent requests can increase usage.
+
+Downloads appear in the bottom tray. You can stop a transfer, retry an error, and keep navigating while it runs. The tray is separate from loading a model into memory.
+
+The model-folder control applies to Atlas-managed Ollama. Changing the folder does not move files you already downloaded. An independently running or remote Ollama service keeps its own storage configuration.
+
+### Other local servers
+
+Start the MLX-LM, llama.cpp, LM Studio, vLLM, or compatible server before adding it. Choose its preset or a custom endpoint and use the base URL exposed by that server. Ports vary by server configuration.
+
+Atlas connects to a running server; adding an endpoint does not install every third-party runtime automatically.
+
+### Cloud APIs
+
+Choose a preset, enter your own API key, and test the connection. Credentials are stored in the macOS Keychain. Account access, usage charges, rate limits, and model availability are controlled by the provider.
+
+For a compatible service without a preset, choose **Custom endpoint** and enter its base URL. Some services expose a model list; others require a configured model ID.
+
+### Claude Code and Codex
+
+Install and sign in to the CLI you want to use, then add or enable its connection in Atlas. Configure the binary path if Atlas cannot find it.
+
+- **Default** uses the CLI's own model configuration.
+- Claude Code offers readable entries for its model aliases.
+- Codex can read selectable model metadata from its local catalog.
+- **Use an exact model ID** selects a model identifier supported by that runtime and account.
+
+The local catalog is a discovery aid, not a guarantee of current account access. Atlas does not expose catalog identity or instruction fields in the model list. A Codex local-model configuration uses its local provider rather than the cloud catalog.
+
+## Chat with a model
+
+Open a new chat and use the model picker in the composer. Search by model or provider name, then select an entry. Your current choice is highlighted when you reopen the picker.
+
+Write a message and send it. The reply streams into the conversation, with Markdown and code formatting. Use the stop control to interrupt the current answer or run.
+
+The sidebar keeps conversation history. Search it, rename a chat, or delete it from its action menu. Collapsing the sidebar hides the history list but keeps navigation available as icons.
+
+### Files and images
+
+Use the plus button, drag and drop, or paste a supported image. Text files are included as attachment content. Images require a vision-capable model and provider path.
+
+If the provider reports that a model does not support multimodal requests, select a compatible model or remove the image. Atlas cannot add image understanding to a text-only model. Attachment size and file-type limits are reported in the interface.
+
+### Project context and tools
+
+Choose a project to provide project context. Enable only the tools needed for the task. With agent tools enabled, a model conversation can become an Atlas Assistant run rather than a direct reply.
+
+An agent selected in the composer uses its own model. A team uses the models assigned to its members. Change those assignments in agent or team management.
+
+## Work on a project
+
+Switch to **Work**, add a project folder, and start a session. The session panel helps inspect project context, the environment, and Git changes.
+
+In a Git project, writing tasks can run on isolated branches and worktrees. Review the diff and merge explicitly when you are satisfied. Atlas checks for conflicts and protects uncommitted work during merges. Non-Git folders have different isolation limits; keep backups and review results.
+
+A model's final message is not proof that its changes are correct. Inspect the run activity, changed files, and any verification it performed.
+
+## Create and manage a team
+
+Open **Agents → Teams → New team**. Choose a template and optional project, or start empty. Customize the name and description as needed.
+
+Available templates cover Engineering, Research, Design, Quality Assurance, and DevOps. They are editable starting points.
+
+Automatic assignment chooses models from available non-CLI endpoints by agent role. During creation, expand **Customize setup** to choose models for planning/review, engineering, and research. You can remember those choices for later teams.
+
+In an existing team's **Agents** view, **Assign missing models** fills unconfigured agents without replacing complete manual assignments. Manually chosen models can still become unavailable later.
+
+### Start work
+
+Open the team and enter an objective in **Work**. The team needs a lead with an assigned model. Resume a paused lead before starting. Restore archived teams before submitting new work.
+
+The lead plans and delegates tasks. Follow execution in **Activity**, review the task history in **Work**, and inspect results and memory in **Resources**. Approval requests can pause progress until you decide.
+
+### Manage members
+
+The Agents page provides team, status, and text filters. Select an agent to edit its role, model, instructions, permissions, or execution limits. Use the action menu to pause, resume, or duplicate it.
+
+Additional controls in the agent inspector let you move an agent, save a preset, or delete it when allowed. Changing a model does not automatically make that model available on its provider.
+
+### Shared memory
+
+Team and project memory retain notes used during future work. Agent-written notes are unverified until you mark them verified. Review or remove stale information rather than assuming it is authoritative.
+
+## Skills, plugins, and integrations
+
+Type `/` at the start of a composer message to choose a skill. Built-in packs provide reusable workflows; custom skills can be added from folders or discovered through the skills finder.
+
+Plugins, hooks, and MCP integrations add behavior and access. Review what you enable. Hooks can run commands, and integrations can send content to external systems. Imported configuration should be reviewed before use.
+
+## Data and privacy
+
+Atlas stores its database and state under `~/Library/Application Support/ATLAS Harness/`. The legacy directory name is retained for compatibility. API keys live in Keychain, and local model files are managed by their runtime.
+
+The app has a local backend with a per-launch token. Remote endpoints, cloud models, agent CLIs, downloads, and optional integrations can make network requests. See [Privacy](../PRIVACY.md) for details and deletion instructions.

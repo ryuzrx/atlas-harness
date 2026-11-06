@@ -1,10 +1,10 @@
-# ATLAS Harness — Architecture
+# Atlas architecture
 
 ## Process model
 
 ```
-ATLAS Harness.app
-├── Contents/MacOS/ATLAS Harness      Swift shell (AppKit + WKWebView, ~200 KB)
+Atlas.app
+├── Contents/MacOS/Atlas      Swift shell (AppKit + WKWebView, ~200 KB)
 │     • generates a 256-bit per-launch token
 │     • starts the backend:  /usr/bin/python3 -m atlas.main  (PYTHONPATH = bundled backend + pylib)
 │     • waits for "ATLAS_READY <port>" on stdout, loads http://127.0.0.1:<port>/#token=…
@@ -62,15 +62,12 @@ Transitions are validated against `TRANSITIONS` and written to `task_transitions
 
 * Agent memory: the task conversation, compacted to the agent's context budget (older tool output first).
 * Team memory / project memory: `memory` table; agents write unverified notes via `remember`; users add,
-  edit, verify or delete in Team → Context. Prompts label unverified items.
+  edit, verify or delete in Team → Resources. Prompts label unverified items.
 * Handoffs carry summaries, changed files and branch names — never full transcripts.
 
 ## Decisions (ADR summary)
 
-1. **Own agent loop instead of OpenHands SDK.** `openhands-sdk` 1.59.0 requires Python ≥ 3.12; LangGraph
-   1.2.19 and LiteLLM 1.108.0 require ≥ 3.10. The target machine has Python 3.9 (Command Line Tools) and
-   no admin rights. A single, small loop also avoids competing agent loops. Claude Code and Codex are
-   integrated as *supervised external runtimes*, not as a second in-process loop.
+1. **An owned agent loop for Python 3.9 compatibility.** The backend supports the Python version provided by the macOS Command Line Tools. A small loop avoids a second orchestration runtime. Claude Code and Codex are integrated as supervised external runtimes.
 2. **SQLite state machine instead of LangGraph.** Durable state, checkpoints and interrupts (approvals)
    are implemented directly on SQLite; no extra dependency.
 3. **Swift/WKWebView shell instead of Tauri.** Building needs no Rust toolchain or admin rights:

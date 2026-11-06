@@ -1,6 +1,6 @@
 # Release notes
 
-## Unreleased
+## 0.3.3 — 2026-11-05
 
 ### Interface
 
