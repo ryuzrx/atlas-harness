@@ -424,8 +424,9 @@ TOOLS: List[Dict[str, Any]] = [
      "description": "Scroll a visible screen region.",
      "parameters": _obj({"x": {"type": "number"}, "y": {"type": "number"}, "delta_y": I}, ["x", "y", "delta_y"])},
     {"name": "finish", "group": None, "handler": t_finish,
-     "description": "Call when the task is done. Give a factual summary of what changed and how it was verified. "
-                    "status: completed | failed | blocked.",
+     "description": "Call when the task is done. `summary` is the final reply the user reads, in Markdown: lead with the "
+                    "outcome, link each changed file by its relative path like [app.ts](src/app.ts), say how you verified it, "
+                    "and note anything left for the user. status: completed | failed | blocked.",
      "parameters": _obj({"summary": S, "status": S, "verification": S}, ["summary"])},
 ]
 

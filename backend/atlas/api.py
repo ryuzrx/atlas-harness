@@ -5,6 +5,7 @@ import asyncio
 import hmac
 import shutil
 import os
+import re
 import subprocess
 import time
 from contextlib import asynccontextmanager
@@ -1025,6 +1026,35 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
     async def delete_conversation(cid: str):
         chat_call(S.chat.delete, cid)
         return {"ok": True}
+
+    @app.post("/api/open")
+    async def open_path(body: Dict[str, Any] = Body(...)):
+        """Open a file or folder mentioned in a reply: files open in their default app, folders in Finder;
+        reveal=True selects the item in Finder instead. Relative paths resolve against the run's worktree,
+        then its project, then the chat's project."""
+        raw = str(body.get("path") or "").strip()
+        raw = re.sub(r"(:\d+)+$", "", raw)   # "src/app.ts:42" -> "src/app.ts"
+        if not raw or "\x00" in raw:
+            raise HTTPException(400, "No path given.")
+        bases: List[Path] = []
+        task = S.db.get("tasks", str(body.get("task_id") or "")) if body.get("task_id") else None
+        if task and task.get("worktree"):
+            bases.append(Path(task["worktree"]))
+        for pid in [task.get("project_id") if task else None, body.get("project_id")]:
+            proj = S.db.get("projects", pid) if pid else None
+            if proj and proj.get("path"):
+                bases.append(Path(proj["path"]))
+        candidate = Path(raw).expanduser()
+        options = [candidate] if candidate.is_absolute() else [b / candidate for b in bases]
+        home = Path.home().resolve()
+        target = next((p.resolve() for p in options if p.exists()), None)
+        if not target:
+            raise HTTPException(404, f"Couldn't find {raw}.")
+        if target != home and home not in target.parents and not any(b.resolve() in target.parents or b.resolve() == target for b in bases):
+            raise HTTPException(403, "Atlas only opens files in your home folder or this project.")
+        args = ["open", "-R", str(target)] if body.get("reveal") else ["open", str(target)]
+        await asyncio.to_thread(subprocess.run, args, check=False)
+        return {"ok": True, "path": str(target), "is_dir": target.is_dir()}
 
     @app.post("/api/uploads")
     async def upload(request: Request, name: str = "file", id: str = "", offset: int = 0):

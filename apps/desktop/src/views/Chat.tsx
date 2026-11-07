@@ -12,7 +12,7 @@ import { useStore } from "../store";
 import { cx, StatusBadge, useAction, useToast } from "../components/ui";
 import { AtlasMark } from "../components/Logo";
 import { AnimatedMark } from "../components/AnimatedMark";
-import { Markdown } from "../components/Markdown";
+import { Markdown, PathBase } from "../components/Markdown";
 import { ExecutionViewer } from "../components/Execution";
 import { RunTimeline, summarizeSteps, useRunSteps } from "../components/RunTimeline";
 import { Starfield } from "../components/Starfield";
@@ -555,7 +555,7 @@ function UserMessage({ m, onEdit }: { m: ChatMessage; onEdit?: (text: string) =>
   );
 }
 
-const MessageView = React.memo(function MessageView({ m, live, providers, onEdit, last }: { m: ChatMessage; live?: string; providers: Provider[]; onEdit?: (text: string) => void; last?: boolean }) {
+const MessageView = React.memo(function MessageView({ m, live, providers, onEdit, last, projectId }: { m: ChatMessage; live?: string; providers: Provider[]; onEdit?: (text: string) => void; last?: boolean; projectId?: string }) {
   const [copied, copy] = useCopy();
   const [worked, setWorked] = useState(false);
   if (m.role === "user") return <UserMessage m={m} onEdit={onEdit} />;
@@ -573,7 +573,7 @@ const MessageView = React.memo(function MessageView({ m, live, providers, onEdit
       {m.task_id && (finishedRun
         ? <Disclosure open={worked} onToggle={() => setWorked((o) => !o)} label={`Worked for ${fmtDur(elapsed(m))}`}>{worked && <RunPanel taskId={m.task_id} bare />}</Disclosure>
         : <RunPanel taskId={m.task_id} />)}
-      {text && <div className={cx("chat-reply", streaming && "caret")}><Markdown text={text} /></div>}
+      {text && <div className={cx("chat-reply", streaming && "caret")}><PathBase.Provider value={{ taskId: m.task_id, projectId: m.data?.project_id ?? projectId }}><Markdown text={text} /></PathBase.Provider></div>}
       {m.data?.error && (
         <div className="flex items-start gap-2.5 rounded-xl border border-[var(--error)]/30 bg-[var(--error-bg)] px-3.5 py-3 text-sm text-bad">
           <AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="selectable">{m.data.error}</span></div>)}
@@ -801,7 +801,7 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
             <div ref={scroller} onScroll={onScroll} className="flex-1 overflow-y-auto">
               <div className={cx("mx-auto px-6 pt-[88px] pb-16 flex flex-col gap-9", wide ? "max-w-[1000px]" : "max-w-[768px]")}>
                 {!conv && <div className="flex justify-center py-16"><Loader2 size={18} className="animate-spin text-ink-3" /></div>}
-                {messages.map((m, i) => <MessageView key={m.id} m={m} live={live[m.id]} providers={chatProviders} last={i === messages.length - 1} onEdit={onEdit} />)}
+                {messages.map((m, i) => <MessageView key={m.id} m={m} live={live[m.id]} providers={chatProviders} last={i === messages.length - 1} onEdit={onEdit} projectId={cfg.project_id} />)}
               </div>
             </div>
             <div className="shrink-0 px-6 pb-5 pt-1 chat-composer-dock">

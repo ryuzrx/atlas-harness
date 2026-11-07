@@ -1,12 +1,35 @@
-import React, { useState } from "react";
-import { Check, Copy } from "lucide-react";
-import { openExternal } from "../api";
+import React, { createContext, useContext, useState } from "react";
+import { Check, Copy, FileText, Folder } from "lucide-react";
+import { api, openExternal } from "../api";
+import { useToast } from "./ui";
+
+/** Where relative paths in a reply live: the run's worktree, then its project. */
+export const PathBase = createContext<{ taskId?: string; projectId?: string }>({});
+
+// "src/app.ts", "./README.md", "~/notes/", "src/app.ts:42". Not "0.1", "e.g", "toBe(x)", or bare words.
+const PATHLIKE = /^(~\/|\.{1,2}\/|\/)?[\w@.+-]+(\/[\w@.+-]+)*\/?(:\d+)*$/;
+const looksLikePath = (t: string) => PATHLIKE.test(t) && !/^\d/.test(t) && (t.includes("/") || /\.[a-z][a-z0-9]{0,5}(:\d+)*$/i.test(t));
+
+function PathLink({ path, children, code }: { path: string; children: React.ReactNode; code?: boolean }) {
+  const base = useContext(PathBase);
+  const toast = useToast();
+  const isDir = path.endsWith("/");
+  const open = (e: React.MouseEvent) => {
+    e.preventDefault();
+    api<{ is_dir: boolean }>("/open", { body: { path, task_id: base.taskId, project_id: base.projectId, reveal: e.altKey } })
+      .catch((err) => toast(err.message || `Couldn't open ${path}.`, "bad"));
+  };
+  const tip = `${path}\nClick to open · Option-click to show in Finder`;
+  if (code) return <a href="#" onClick={open} title={tip} className="path-link"><code>{children}</code></a>;
+  return <a href="#" onClick={open} title={tip} className="path-link path-link-text">
+    {isDir ? <Folder size={13} strokeWidth={1.8} /> : <FileText size={13} strokeWidth={1.8} />}<span>{children}</span></a>;
+}
 
 /** Small, safe Markdown renderer for chat: React elements only, never innerHTML. */
 
 function inline(text: string, key = 0): React.ReactNode[] {
   const out: React.ReactNode[] = [];
-  // Bold/italic may wrap across soft line breaks inside one paragraph; relative links render as plain text.
+  // Bold/italic may wrap across soft line breaks inside one paragraph; links to files open them on this Mac.
   const re = /(`[^`\n]+`)|(\*\*[^*]+?\*\*)|(\*[^*\s][^*]*?\*|\b_[^_\n]+_\b)|(\[[^\]\n]+\]\(([^)\s]+)\))/g;
   const push = (s: string) => s.split("\n").forEach((part, j) => { if (j) out.push(<br key={`${key}-br${i++}`} />); if (part) out.push(part); });
   let last = 0, m: RegExpExecArray | null, i = 0;
@@ -14,10 +37,11 @@ function inline(text: string, key = 0): React.ReactNode[] {
     if (m.index > last) push(text.slice(last, m.index));
     const t = m[0];
     const k = `${key}-${i++}`;
-    if (m[1]) out.push(<code key={k}>{t.slice(1, -1)}</code>);
+    if (m[1]) { const c = t.slice(1, -1); out.push(looksLikePath(c) ? <PathLink key={k} path={c} code>{c}</PathLink> : <code key={k}>{c}</code>); }
     else if (m[2]) out.push(<strong key={k}>{t.slice(2, -2)}</strong>);
     else if (m[3]) out.push(<em key={k}>{t.slice(1, -1)}</em>);
-    else if (m[4] && !/^https?:\/\//.test(m[5])) out.push(t.slice(1, t.indexOf("]")));
+    else if (m[4] && /^(mailto:|#)/.test(m[5])) out.push(t.slice(1, t.indexOf("]")));
+    else if (m[4] && !/^https?:\/\//.test(m[5])) out.push(<PathLink key={k} path={decodeURI(m[5])}>{t.slice(1, t.indexOf("]"))}</PathLink>);
     else if (m[4]) { const url = m[5]; out.push(<a key={k} href={url} title={url} onClick={(e) => { e.preventDefault(); openExternal(url); }}>{t.slice(1, t.indexOf("]"))}</a>); }
     last = m.index + t.length;
   }

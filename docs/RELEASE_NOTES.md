@@ -1,5 +1,16 @@
 # Release notes
 
+## 0.5.9 — 2026-11-07
+
+### Clickable files and folders
+
+- File and folder paths in replies are links. Click one to open it, or Option-click to show it in Finder. This covers Markdown links like `[Header.tsx](src/components/Header.tsx)` and paths written as inline code, like `src/app.ts`.
+- Relative paths open from the run's own copy of your project first, then the project folder. Atlas only opens files in your home folder or the project.
+
+### Clearer final replies
+
+- When a run finishes, the agent's last message leads with the outcome, links each file it changed with what changed, says how it checked the work, and notes anything left for you.
+
 ## 0.5.8 — 2026-11-07
 
 ### Updates

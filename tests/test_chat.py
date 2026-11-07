@@ -165,3 +165,17 @@ def test_chunked_upload_appends_in_order():
         assert c.post(f"/api/uploads?id={first['id']}&offset=3", content=b"x", headers=H).status_code == 409
         from atlas.chat import uploads_dir
         assert (uploads_dir() / first["id"] / "big.bin").read_bytes() == b"a" * 10 + b"b" * 5
+
+
+def test_open_path_resolves_project_files_and_refuses_system_paths(repo, monkeypatch):
+    import atlas.api as api_mod
+    opened = []
+    monkeypatch.setattr(api_mod.subprocess, "run", lambda args, check=False: opened.append(args))
+    with client({}) as c:
+        proj = c.post("/api/projects", json={"path": str(repo)}, headers=H).json()
+        out = c.post("/api/open", json={"path": "calc.py:12", "project_id": proj["id"]}, headers=H).json()
+        assert out["ok"] and out["path"].endswith("calc.py") and opened[-1][0] == "open" and "-R" not in opened[-1]
+        c.post("/api/open", json={"path": "calc.py", "project_id": proj["id"], "reveal": True}, headers=H)
+        assert opened[-1][1] == "-R"
+        assert c.post("/api/open", json={"path": "nope.py", "project_id": proj["id"]}, headers=H).status_code == 404
+        assert c.post("/api/open", json={"path": "/etc/hosts"}, headers=H).status_code == 403
