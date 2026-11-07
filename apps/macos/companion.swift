@@ -26,6 +26,12 @@ struct ChatModel: Identifiable, Hashable {
     var short: String { name.split(separator: "/").last.map(String.init) ?? name }
 }
 
+/// A chat that is still answering, shown in the island so parallel sessions are visible.
+struct LiveSession: Identifiable, Equatable {
+    let id: String
+    let title: String
+}
+
 struct PendingItem: Identifiable, Equatable {
     let id: String
     let taskId: String
@@ -43,6 +49,7 @@ final class Companion: ObservableObject {
     @Published var items: [PendingItem] = []
     @Published var status: String = "All quiet"
     @Published var ticker: String = ""          // latest step, e.g. "Ran npm test"
+    @Published var sessions: [LiveSession] = []  // chats still working, newest first
     @Published var expanded = false
     var openedAt = Date.distantPast
     var onUserClose: (() -> Void)?
@@ -122,6 +129,13 @@ final class Companion: ObservableObject {
                 self.polling = false
                 self.apply(approvals, taskRows, steps)
             }
+        }
+        request("/api/conversations?limit=40") { [weak self] rows in
+            let live = (rows as? [[String: Any]] ?? []).compactMap { r -> LiveSession? in
+                guard (r["busy"] as? Int ?? 0) > 0, let id = r["id"] as? String else { return nil }
+                return LiveSession(id: id, title: (r["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Chat")
+            }
+            if let self, live != self.sessions { self.sessions = live; self.onChange?() }
         }
         request("/api/approvals") { [weak self] approvals in
             self?.request("/api/tasks?limit=30") { taskRows in
@@ -240,7 +254,9 @@ final class Companion: ObservableObject {
             status = next.count == 1 ? (next[0].isQuestion ? "Atlas has a question" : "Approval needed") : "\(next.count) things need you"
         } else if let t = planning {
             mood = .thinking; status = "Planning · \(t)"
-        } else if let t = running {
+        } else if sessions.count > 1 {
+            mood = .working; status = "\(sessions.count) chats working"
+        } else if let t = running ?? sessions.first?.title {
             mood = .working; status = t
         } else if Date().timeIntervalSince(doneAt) < 4 {
             mood = .done; status = "Done"
@@ -725,8 +741,16 @@ struct IslandView: View {
     }
 
     @ViewBuilder private var rightWing: some View {
-        if !c.items.isEmpty {
+        if c.items.isEmpty && c.sessions.count > 1 {
+            HStack(spacing: 6) {
+                IslandSpinner(size: 11)
+                Text("\(c.sessions.count)").font(.system(size: 11.5, weight: .semibold)).foregroundColor(.white)
+            }
+            .help("\(c.sessions.count) chats working")
+        } else if !c.items.isEmpty {
             badge(c.items.count > 1 ? "\(c.items.count)" : "!")
+        } else if c.mood == .working && c.ticker.isEmpty {
+            IslandSpinner(size: 11)
         } else if c.mood == .done {
             Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundColor(.white)
         } else if !c.ticker.isEmpty {
@@ -774,9 +798,36 @@ struct IslandView: View {
         ("lightbulb", "Explain an error"), ("text.badge.checkmark", "Commit message"), ("list.bullet", "Plan my next step"),
     ]
 
+    private var runningList: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(c.sessions.count == 1 ? "WORKING" : "\(c.sessions.count) WORKING")
+                .font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundColor(Color(white: 0.42))
+                .padding(.leading, 4).padding(.bottom, 4)
+            ForEach(c.sessions.prefix(4)) { s in
+                Button { c.openChat?(s.id) } label: {
+                    HStack(spacing: 10) {
+                        IslandSpinner(size: 12)
+                        Text(s.title).font(.system(size: 13)).foregroundColor(Color(white: 0.88)).lineLimit(1)
+                        Spacer(minLength: 4)
+                        Image(systemName: "arrow.up.right").font(.system(size: 10, weight: .semibold)).foregroundColor(Color(white: 0.4))
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.05)))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(PressableStyle())
+                .help("Open this chat in Atlas")
+            }
+            if c.sessions.count > 4 {
+                Text("+\(c.sessions.count - 4) more").font(.system(size: 11)).foregroundColor(Color(white: 0.45)).padding(.leading, 4).padding(.top, 2)
+            }
+        }
+    }
+
     private var chat: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if c.chatAsked.isEmpty {
+            if !c.sessions.filter({ $0.id != c.chatId }).isEmpty && c.chatAsked.isEmpty { runningList }
+            if c.chatAsked.isEmpty && c.sessions.isEmpty {
                 // empty state: quick starts that fill the box
                 HStack(spacing: 6) {
                     ForEach(Self.suggestions, id: \.text) { s in
@@ -952,6 +1003,22 @@ struct IslandView: View {
 }
 
 /// Press feedback on pointer-down, like system buttons.
+/// ChatGPT-style spinning ring for work in progress.
+struct IslandSpinner: View {
+    var size: CGFloat = 12
+    var body: some View {
+        TimelineView(.animation) { t in
+            let angle = (t.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.8) / 0.8) * 360
+            ZStack {
+                Circle().stroke(Color.white.opacity(0.2), lineWidth: 1.6)
+                Circle().trim(from: 0, to: 0.28).stroke(Color.white, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                    .rotationEffect(.degrees(angle))
+            }
+            .frame(width: size, height: size)
+        }
+    }
+}
+
 /// Three dots that breathe in turn while Atlas is thinking.
 struct ThinkingDots: View {
     var body: some View {

@@ -1,5 +1,18 @@
 # Release notes
 
+## 0.5.4 — 2026-11-06
+
+### Multiple chats
+
+- A spinning ring marks every chat that is still working, in both the Chat list and under each Work project. A collapsed project shows it when any of its chats is working.
+- The Dynamic Island shows working chats. When closed, it shows a spinner and how many chats are working. When open, it lists them, and you tap one to jump to it.
+- The island now also tracks chats that stream straight from a model, not only agent runs.
+
+### Performance
+
+- Streaming replies no longer redraw every message in the chat. Only the reply being written updates, so long chats stay smooth.
+- The session panel no longer redraws on every streamed token.
+
 ## 0.5.3 — 2026-11-06
 
 ### Chat

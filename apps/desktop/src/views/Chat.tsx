@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp, Square, Plus, Box, Wrench, ChevronDown, Check, X, FileText, Users, Bot, ChevronRight,
   Copy, Pencil, Columns2, Volume2, AlertCircle, Terminal, SlidersHorizontal, ExternalLink, Loader2, Code2, Layers, Sparkles, PanelRight, Cpu, ShieldCheck,
@@ -553,7 +553,7 @@ function UserMessage({ m, onEdit }: { m: ChatMessage; onEdit?: (text: string) =>
   );
 }
 
-function MessageView({ m, live, providers, onEdit, last }: { m: ChatMessage; live?: string; providers: Provider[]; onEdit?: (text: string) => void; last?: boolean }) {
+const MessageView = React.memo(function MessageView({ m, live, providers, onEdit, last }: { m: ChatMessage; live?: string; providers: Provider[]; onEdit?: (text: string) => void; last?: boolean }) {
   const [copied, copy] = useCopy();
   const [worked, setWorked] = useState(false);
   if (m.role === "user") return <UserMessage m={m} onEdit={onEdit} />;
@@ -590,7 +590,7 @@ function MessageView({ m, live, providers, onEdit, last }: { m: ChatMessage; liv
       )}
     </div>
   );
-}
+});
 
 // ---------------------------------------------------------------- top bar: activity + conversation settings
 function SettingsPopover({ cfg, set, open, onClose }: { cfg: ChatConfig; set: (p: ChatConfig) => void; open: boolean; onClose: () => void }) {
@@ -687,7 +687,9 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
   const [seed, setSeed] = useState<{ text: string; n: number } | undefined>();
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
-  const cfg: ChatConfig = id && conv ? { ...draft, ...conv.config } : draft;
+  const convConfig = conv?.config;
+  const cfg: ChatConfig = useMemo(() => (id && convConfig ? { ...draft, ...convConfig } : draft), [id, convConfig, draft]);
+  const onEdit = useCallback((t: string) => setSeed({ text: t, n: Date.now() }), []);
 
   const setCfg = (p: ChatConfig) => {
     const next = { ...cfg, ...p };
@@ -794,7 +796,7 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
             <div ref={scroller} onScroll={onScroll} className="flex-1 overflow-y-auto">
               <div className={cx("mx-auto px-6 pt-[88px] pb-16 flex flex-col gap-9", wide ? "max-w-[1000px]" : "max-w-[768px]")}>
                 {!conv && <div className="flex justify-center py-16"><Loader2 size={18} className="animate-spin text-ink-3" /></div>}
-                {messages.map((m, i) => <MessageView key={m.id} m={m} live={live[m.id]} providers={chatProviders} last={i === messages.length - 1} onEdit={(t) => setSeed({ text: t, n: Date.now() })} />)}
+                {messages.map((m, i) => <MessageView key={m.id} m={m} live={live[m.id]} providers={chatProviders} last={i === messages.length - 1} onEdit={onEdit} />)}
               </div>
             </div>
             <div className="shrink-0 px-6 pb-5 pt-1 chat-composer-dock">

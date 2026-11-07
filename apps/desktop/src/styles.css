@@ -322,3 +322,7 @@ table thead th { font-weight: 500; font-size: 11.5px; }
 .chat-composer:focus-within { border-color: var(--border-strong); }
 .chat-composer-dock { background: linear-gradient(to bottom, transparent, var(--base) 22px); margin-top: -22px; position: relative; }
 .chat-greeting { font-family: var(--font-reply); font-size: 34px; font-weight: 400; letter-spacing: -0.01em; }
+
+.working-spinner { width: 12px; height: 12px; border-radius: 999px; border: 1.6px solid color-mix(in srgb, var(--text-3) 35%, transparent); border-top-color: var(--text); animation: working-spin 0.75s linear infinite; }
+@keyframes working-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .working-spinner { animation-duration: 2.4s; } }

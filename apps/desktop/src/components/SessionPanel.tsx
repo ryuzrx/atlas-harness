@@ -19,7 +19,7 @@ function Section({ title, children, right }: { title: string; children: React.Re
 }
 
 /** Side panel shown once a conversation has started: where it runs, how full the context is, connectors, and changes. */
-export function SessionPanel({ messages, cfg, onClose }: {
+export const SessionPanel = React.memo(function SessionPanel({ messages, cfg, onClose }: {
   messages: Msg[]; cfg: { provider_id?: string; model?: string; project_id?: string; mode?: string }; onClose: () => void;
 }) {
   const { data: projects = [] } = useApi<Project[]>("/projects", ["project"]);
@@ -117,4 +117,4 @@ export function SessionPanel({ messages, cfg, onClose }: {
         </Section>)}
     </aside>
   );
-}
+});

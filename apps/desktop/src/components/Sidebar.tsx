@@ -10,6 +10,11 @@ import { loadDraft } from "../views/Chat";
 
 export { AtlasMark as Logo };
 
+/** ChatGPT-style spinning ring shown beside any chat that is still working. */
+export function WorkingSpinner({ className }: { className?: string }) {
+  return <span role="status" aria-label="Working" title="Working" className={cx("working-spinner shrink-0", className)} />;
+}
+
 export interface Conversation { id: string; title: string; updated_at: number; created_at: number; config: Record<string, any>; busy?: number }
 
 const NAV: { id: RouteName; label: string; icon: React.ElementType; match: RouteName[] }[] = [
@@ -72,7 +77,7 @@ function ChatItem({ c, active }: { c: Conversation; active: boolean }) {
       <button onClick={() => go({ name: "chat", id: c.id })} onDoubleClick={() => setEditing(true)}
         className="flex-1 min-w-0 flex items-center h-8 pl-2.5 pr-1 text-sm text-ink text-left no-drag">
         <span className="truncate">{c.title}</span>
-        {!!c.busy && <span className="ml-auto mr-1 shrink-0 h-1.5 w-1.5 rounded-full bg-[var(--accent)] animate-pulse" title="Working" aria-label="Working" />}
+        {!!c.busy && <WorkingSpinner className="ml-auto mr-1" />}
       </button>
       <span className={cx("mr-1 shrink-0", active ? "flex" : "hidden group-hover:flex group-focus-within:flex")}>
         <Menu trigger={<button aria-label={`Actions for ${c.title}`} className="h-6 w-6 flex items-center justify-center rounded-sm text-ink-2 hover:text-ink hover:bg-active no-drag"><MoreHorizontal size={14} /></button>}
@@ -247,7 +252,8 @@ function ProjectList() {
                     <Icon size={15} strokeWidth={1.6} className={cx("shrink-0", !p.exists ? "text-bad" : "text-ink-2")} />
                     <span className="truncate">{p.name}</span>
                   </button>
-                  {chats.length > 0 && <span className="shrink-0 px-1.5 text-2xs text-ink-3 tabular-nums group-hover:hidden group-focus-within:hidden">{chats.length}</span>}
+                  {chats.some((c) => c.busy) ? <WorkingSpinner className="mx-1.5 group-hover:hidden group-focus-within:hidden" />
+                    : chats.length > 0 && <span className="shrink-0 px-1.5 text-2xs text-ink-3 tabular-nums group-hover:hidden group-focus-within:hidden">{chats.length}</span>}
                   <button onClick={() => void newChat(p)} disabled={!p.exists || creating} aria-label={`New chat in ${p.name}`} title={`New chat in ${p.name}`}
                     className="h-7 w-7 mr-0.5 shrink-0 hidden group-hover:flex group-focus-within:flex items-center justify-center rounded-sm text-ink-3 hover:text-ink hover:bg-active disabled:opacity-40 no-drag"><Plus size={14} /></button>
                 </div>
@@ -257,7 +263,8 @@ function ProjectList() {
                       const on = openChatId === chat.id;
                       return <button key={chat.id} onClick={() => go({ name: "chat", id: chat.id })} title={chat.title}
                         aria-current={on ? "page" : undefined}
-                        className={cx("h-7 min-w-0 px-2 rounded-sm text-left text-xs truncate no-drag", on ? "bg-selected text-ink" : "text-ink-2 hover:text-ink hover:bg-hover")}>{chat.title || "Untitled chat"}</button>;
+                        className={cx("h-7 min-w-0 px-2 rounded-sm text-left text-xs no-drag flex items-center gap-2", on ? "bg-selected text-ink" : "text-ink-2 hover:text-ink hover:bg-hover")}>
+                        <span className="truncate flex-1">{chat.title || "Untitled chat"}</span>{!!chat.busy && <WorkingSpinner />}</button>;
                     })}
                     {chats.length > CHAT_PREVIEW && <button onClick={() => setShowAll((v) => ({ ...v, [p.id]: !v[p.id] }))}
                       className="h-6 px-2 rounded-sm text-left text-xs text-ink-3 hover:text-ink hover:bg-hover no-drag">{showAll[p.id] ? "Show less" : `Show all ${chats.length}`}</button>}
