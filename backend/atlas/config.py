@@ -90,7 +90,7 @@ DEFAULT_SETTINGS = {
     "permissions.protected_branches": ["main", "master", "release", "production"],
     "permissions.block_secret_files": True,
     "agents.default_temperature": 0.2,
-    "agents.default_tools": ["read", "write", "shell", "git", "messages", "memory"],  # abilities new agents start with
+    "agents.default_tools": ["read", "web", "write", "shell", "git", "messages", "memory"],  # abilities new agents start with
     "teams.default_template": "engineering",
     "teams.confirm_delete": True,
     "agents.default_context_budget": 16000,

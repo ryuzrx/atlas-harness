@@ -40,62 +40,42 @@ const GROUPS: Record<string, string[]> = {
 function summary(e: AtlasEvent): string {
   const d = e.data || {};
   switch (e.type) {
-    case "tool_call": return `${d.tool}(${Object.entries(d.args || {}).map(([k, v]) => `${k}=${typeof v === "string" ? JSON.stringify(v.length > 60 ? v.slice(0, 60) + "…" : v) : JSON.stringify(v)}`).join(", ")})`;
-    case "tool_result": return `${d.tool || ""} ${d.ok === false || d.is_error ? "failed" : "ok"}${d.ms != null ? ` · ${d.ms} ms` : ""}${d.exit_code != null ? ` · exit ${d.exit_code}` : ""} — ${String(d.output || "").split("\n")[0].slice(0, 120)}`;
-    case "file_edit": return d.path ? `${d.result || d.path}` : `${(d.changes || []).map((c: any) => `${c.kind} ${c.path}`).join(", ")}`;
-    case "agent_message": return String(d.text || "").slice(0, 200);
-    case "llm_request": return `step ${d.step} · ~${d.est_prompt_tokens} tokens (estimated) · ${d.messages} messages`;
-    case "llm_response": return `step ${d.step} · ${d.latency_ms} ms · ${d.tool_calls} tool call(s)${d.usage?.completion_tokens ? ` · ${d.usage.completion_tokens} output tokens` : ""}`;
-    case "agent_started": return `${d.provider} · ${d.model} · ${d.tool_mode}`;
-    case "task_status": return `${d.title}: ${d.from || "—"} → ${d.to}${d.reason ? ` — ${d.reason}` : ""}`;
+    case "tool_call": return d.tool === "read_file" ? `Reading ${d.args?.path || d.args?.file_path || "a file"}` : d.tool === "web_search" ? "Searching the web" : d.tool === "run_command" || d.tool === "terminal" || d.tool === "shell" ? "Running a command" : `Using ${String(d.tool || "tool").replace(/_/g, " ")}`;
+    case "tool_result": return `${d.ok === false || d.is_error ? "Step needs attention" : "Step complete"}${d.ms != null ? ` · ${d.ms} ms` : ""}`;
+    case "file_edit": return d.path || (d.changes || []).map((c: any) => c.path).filter(Boolean).join(", ") || "Files updated";
+    case "agent_message": return "Progress update";
+    case "llm_request": return "Working on the next step";
+    case "llm_response": return "Step complete";
+    case "agent_started": return "Agent started";
+    case "task_status": return `${d.title || "Task"}: ${d.to || "updated"}`;
     case "plan_created": return `${(d.tasks || []).length} tasks — ${d.summary || ""}`;
     case "completion_report": return `${d.status}: ${String(d.summary || "").slice(0, 160)}`;
     case "final_report": return `${d.failed ? `${d.failed} failed` : "All tasks completed"}`;
-    case "error": return String(d.message || "").slice(0, 200);
-    case "approval_requested": return `${d.kind}: ${d.payload?.command || d.payload?.title || ""}`;
+    case "error": return String(d.message || "Something went wrong").split("\n")[0].slice(0, 160);
+    case "approval_requested": return "Approval requested";
     case "approval_decided": return d.approved ? "Approved" : "Denied";
-    case "agent_message_sent": return `${d.type}: ${d.preview || ""}`;
+    case "agent_message_sent": return `Task handed off${d.type ? ` · ${d.type}` : ""}`;
     case "worktree_created": return `${d.branch} at ${d.path}`;
     case "conflict_detected": return d.files ? `${d.files.join(", ")}` : String(d.error || d.branch || "");
-    case "queued_for_model": return `Waiting for a free ${d.provider} inference slot`;
-    default: return JSON.stringify(d).slice(0, 160);
+    case "queued_for_model": return "Waiting for the model";
+    default: return "Activity updated";
   }
 }
 
-function detail(e: AtlasEvent): string | null {
-  const d = e.data || {};
-  if (e.type === "tool_result") return String(d.output || "");
-  if (e.type === "tool_call") return JSON.stringify(d.args, null, 2);
-  if (e.type === "agent_message") return String(d.text || "");
-  if (e.type === "completion_report") return `${d.summary || ""}\n\nFiles: ${(d.files || []).join(", ") || "none"}\n${d.verification ? `\nVerification: ${d.verification}` : ""}`;
-  if (e.type === "final_report") return String(d.report || "");
-  if (e.type === "error") return [d.message, d.trace].filter(Boolean).join("\n\n");
-  if (e.type === "plan_created") return (d.tasks || []).map((t: any, i: number) => `${i + 1}. ${t.title}`).join("\n") + (d.summary ? `\n\n${d.summary}` : "");
-  return JSON.stringify(d, null, 2);
-}
-
 function Row({ e, agents }: { e: AtlasEvent; agents: Record<string, Agent> }) {
-  const [open, setOpen] = useState(false);
   const k = KIND[e.type] || { label: e.type, icon: ChevronRight };
   const Icon = k.icon;
   const bad = e.type === "error" || (e.type === "tool_result" && (e.data.ok === false || e.data.is_error));
   const ag = e.agent_id ? agents[e.agent_id] : undefined;
   return (
     <div className="row-cv border-b border-line last:border-0 @container">
-      <button onClick={() => setOpen((o) => !o)} aria-expanded={open}
-        className="w-full flex items-center gap-2.5 px-3 h-9 text-left hover:bg-hover">
-        <ChevronRight size={12} className={cx("text-ink-3 shrink-0 transition-transform", open && "rotate-90")} />
+      <div className="w-full flex items-center gap-2.5 px-3 h-9 text-left">
         <Icon size={14} className={cx("shrink-0", bad ? "text-bad" : k.tone || "text-ink-2")} />
         <span className="text-xs text-ink-2 w-[118px] shrink-0 truncate @max-xl:hidden">{k.label}</span>
         {ag && <span className="text-xs font-medium text-ink shrink-0 max-w-[140px] @max-xl:max-w-[80px] truncate">{ag.name}</span>}
         <span className={cx("text-xs truncate flex-1 font-mono", bad ? "text-bad" : "text-ink")}>{summary(e)}</span>
         <span className="text-2xs text-ink-3 tnum shrink-0 @max-md:hidden">{new Date(e.at * 1000).toLocaleTimeString()}</span>
-      </button>
-      {open && (
-        <pre className="selectable mx-3 mb-2.5 ml-[38px] p-2.5 rounded-sm bg-surface-2 border border-line text-xs leading-[1.5] font-mono whitespace-pre-wrap break-words max-h-[420px] overflow-auto">
-          {detail(e)}
-        </pre>
-      )}
+      </div>
     </div>
   );
 }
@@ -115,7 +95,6 @@ export function ExecutionViewer({ taskId, teamId, agentId, includeChildren = tru
   const [fAgent, setFAgent] = useState("");
   const [fType, setFType] = useState("");
   const [fStatus, setFStatus] = useState("");
-  const [tokens, setTokens] = useState<Record<string, string>>({});
   const [follow, setFollow] = useState(true);
   const scroller = useRef<HTMLDivElement>(null);
   const { data: agentList = [] } = useApi<Agent[]>(teamId ? `/agents?team_id=${teamId}` : "/agents", ["agent"]);
@@ -132,8 +111,6 @@ export function ExecutionViewer({ taskId, teamId, agentId, includeChildren = tru
 
   useEffect(() => subscribe((m) => {
     if (m.kind === "tokens") {
-      const relevant = (!taskId || m.task_id === taskId || childIds.current.has(m.task_id)) && (!agentId || m.agent_id === agentId);
-      if (relevant) setTokens((t) => ({ ...t, [m.task_id]: ((t[m.task_id] || "") + m.text).slice(-1500) }));
       return;
     }
     if (m.kind === "changed" && m.entity === "task" && taskId) {
@@ -144,11 +121,10 @@ export function ExecutionViewer({ taskId, teamId, agentId, includeChildren = tru
     const ok = (!taskId || e.task_id === taskId || (includeChildren && childIds.current.has(e.task_id || ""))) &&
       (!teamId || e.team_id === teamId) && (!agentId || e.agent_id === agentId);
     if (!ok) return;
-    if (e.type === "llm_response" || e.type === "agent_message") setTokens((t) => { const n = { ...t }; delete n[e.task_id || ""]; return n; });
     setEvents((ev) => [...ev.slice(-1500), e]);
   }), [taskId, teamId, agentId, includeChildren]);
 
-  useEffect(() => { if (follow && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight; }, [events, tokens, follow]);
+  useEffect(() => { if (follow && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight; }, [events, follow]);
 
   const shown = events.filter((e) =>
     (!fAgent || e.agent_id === fAgent) &&
@@ -160,7 +136,6 @@ export function ExecutionViewer({ taskId, teamId, agentId, includeChildren = tru
     const more = await api<AtlasEvent[]>(`/events?${params}&before=${first}`);
     setEvents((ev) => [...more, ...ev]);
   };
-  const live = Object.entries(tokens).filter(([, v]) => v.trim());
 
   return (
     <div className="flex flex-col">
@@ -185,16 +160,10 @@ export function ExecutionViewer({ taskId, teamId, agentId, includeChildren = tru
       )}
       <div ref={scroller} style={{ height }} className="overflow-auto rounded-md border border-line bg-surface">
         {loading ? <div className="p-6 flex justify-center"><Spinner /></div> :
-          shown.length === 0 && live.length === 0 ? <Empty title="No execution events yet" body="Events appear here as agents plan, call tools, edit files and report results." /> :
+          shown.length === 0 ? <Empty title="No activity yet" body="Progress appears here as the agent works." /> :
             <>
               {events.length >= 400 && <button onClick={loadEarlier} className="w-full h-8 text-xs text-ink-2 hover:bg-hover">Load earlier events</button>}
               {shown.map((e, i) => <Row key={e.id ?? `l${i}`} e={e} agents={agents} />)}
-              {live.map(([tid, text]) => (
-                <div key={tid} className="px-3 py-2 border-t border-line bg-info-bg/40">
-                  <div className="flex items-center gap-2 text-xs text-accent mb-1"><span className="h-1.5 w-1.5 rounded-full bg-accent pulse-dot" /> Streaming model output</div>
-                  <pre className="selectable text-xs font-mono whitespace-pre-wrap text-ink-2 max-h-40 overflow-hidden">{text}</pre>
-                </div>
-              ))}
             </>}
       </div>
     </div>

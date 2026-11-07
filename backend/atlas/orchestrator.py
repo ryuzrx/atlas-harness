@@ -736,6 +736,8 @@ depends on the work it checks; no cycles."""
         limit = task_config.get("tool_limit")
         if isinstance(limit, list):  # composer "Tools" selection narrows, never widens, the agent's permissions
             perms = [p for p in perms if p in limit]
+        if task_config.get("web_search") is True and "web" not in perms:
+            perms.append("web")  # explicit per-chat web-search choice
         if computer_ready:
             perms.append("computer")
         workspace, wt = project, None
@@ -932,7 +934,8 @@ depends on the work it checks; no cycles."""
     async def _run_cli(self, task, agent, prov, prompt, system, workspace, perms, settings, emit) -> Dict[str, Any]:
         policy = settings["permissions.command_policy"]
         auto_approve = bool((task.get("config") or {}).get("auto_approve"))   # per-chat Auto-approve
-        permissions = {"write": "write" in perms, "network": bool(settings["execution.allow_network_in_commands"]),
+        permissions = {"read": "read" in perms, "write": "write" in perms,
+                       "network": "web" in perms if prov.kind == "hermes_agent" else bool(settings["execution.allow_network_in_commands"]),
                        "bash_allowlist": (list(settings["permissions.allowlist"]) + list(settings.get("permissions.always_allow") or []))
                                          if "shell" in perms else [],
                        "bash_any": "shell" in perms and (policy == "auto" or auto_approve)}

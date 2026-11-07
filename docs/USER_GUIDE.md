@@ -45,18 +45,19 @@ Choose a preset, enter your own API key, and test the connection. Credentials ar
 
 For a compatible service without a preset, choose **Custom endpoint** and enter its base URL. Some services expose a model list; others require a configured model ID.
 
-### Claude Code and Codex
+### Agent runtimes
 
-Install and sign in to the CLI you want to use, then add or enable its connection in Atlas. Configure the binary path if Atlas cannot find it.
+Install and configure Atlas Agent, Claude Code, or Codex CLI, then add or enable its connection in Atlas. Configure the binary path if Atlas cannot find it. Atlas Agent runs its agent loop and native web search tools; new chat drafts and automatic Work model assignments prefer Atlas Agent when it is connected.
 
-- **Default** uses the CLI's own model configuration.
+- **Atlas Agent default** uses the provider and model configured for Atlas Agent.
+- Claude Code and Codex **Default** use each CLI's own model configuration.
 - Claude Code offers readable entries for its model aliases.
 - Codex can read selectable model metadata from its local catalog.
 - **Use an exact model ID** selects a model identifier supported by that runtime and account.
 
 The local catalog is a discovery aid, not a guarantee of current account access. Atlas does not expose catalog identity or instruction fields in the model list. A Codex local-model configuration uses its local provider rather than the cloud catalog.
 
-Claude Code and Codex run through their own command-line apps and use the account already signed in there. Atlas does not bypass or increase subscription limits. Complex tasks and multi-agent runs can use more of your plan allowance because the underlying CLI performs the model work.
+These runtimes use the accounts and model settings configured in their own command-line apps. Atlas does not bypass or increase subscription limits. Complex tasks and multi-agent runs can use more of your plan allowance because the underlying runtime performs the model work.
 
 ### Free online models
 
@@ -84,7 +85,7 @@ If the provider reports that a model does not support multimodal requests, selec
 
 ### Project context and tools
 
-Choose a project to provide project context. Enable only the tools needed for the task. With agent tools enabled, a model conversation can become an Atlas Assistant run rather than a direct reply.
+Choose a project to provide project context. **Web search** is available from the chat's Access and tools menu and is on by default. It searches public web results for current information; check the linked sources because search snippets are untrusted. **Auto approve tool actions** is also in that menu. Turn it off to respect the command policy and ask before connected app calls; Git commits and Computer Use input still ask.
 
 An agent selected in the composer uses its own model. A team uses the models assigned to its members. Change those assignments in agent or team management.
 

@@ -30,8 +30,24 @@ function PathLink({ path, children, code }: { path: string; children: React.Reac
 function inline(text: string, key = 0): React.ReactNode[] {
   const out: React.ReactNode[] = [];
   // Bold/italic may wrap across soft line breaks inside one paragraph; links to files open them on this Mac.
-  const re = /(`[^`\n]+`)|(\*\*[^*]+?\*\*)|(\*[^*\s][^*]*?\*|\b_[^_\n]+_\b)|(\[[^\]\n]+\]\(([^)\s]+)\))/g;
-  const push = (s: string) => s.split("\n").forEach((part, j) => { if (j) out.push(<br key={`${key}-br${i++}`} />); if (part) out.push(part); });
+  const re = /(`[^`\n]+`)|(\*\*[^*]+?\*\*)|(\*[^*\s][^*]*?\*|\b_[^_\n]+_\b)|(\[[^\]\n]+\]\(([^)\s]+)\))|(https?:\/\/[^\s<>"']+|(?:www\.)?(?:[\w-]+\.)+[A-Za-z]{2,}\/[^\s<>"']+)|((?:~\/|\.{1,2}\/|\/)?(?:[\w@.+-]+\/)+[\w@.+-]+(?:\.[A-Za-z0-9]{1,8})?(?::\d+)?)/g;
+  const pushPlain = (s: string) => {
+    const links = /https?:\/\/[^\s<>"']+|(?:www\.)?(?:[\w-]+\.)+[A-Za-z]{2,}\/[^\s<>"']+|(?:~\/|\.{1,2}\/|\/)?(?:[\w@.+-]+\/)+[\w@.+-]+(?:\.[A-Za-z0-9]{1,8})?(?::\d+)?/g;
+    let lastPlain = 0, match: RegExpExecArray | null;
+    while ((match = links.exec(s))) {
+      const raw = match[0]; let link = raw;
+      while (/[.,!?;:]$/.test(link)) link = link.slice(0, -1);
+      if (match.index > lastPlain) out.push(s.slice(lastPlain, match.index));
+      const linkKey = `${key}-auto-${i++}`;
+      if (/^https?:\/\//i.test(link) || /^(?:www\.)?(?:[\w-]+\.)+[A-Za-z]{2,}\//i.test(link)) { const url = /^https?:\/\//i.test(link) ? link : `https://${link}`; out.push(<a key={linkKey} href={url} title={url} onClick={(e) => { e.preventDefault(); openExternal(url); }}>{link}</a>); }
+      else if (looksLikePath(link)) out.push(<PathLink key={linkKey} path={link}>{link}</PathLink>);
+      else out.push(link);
+      if (raw.length > link.length) out.push(raw.slice(link.length));
+      lastPlain = match.index + raw.length;
+    }
+    if (lastPlain < s.length) out.push(s.slice(lastPlain));
+  };
+  const push = (s: string) => s.split("\n").forEach((part, j) => { if (j) out.push(<br key={`${key}-br${i++}`} />); if (part) pushPlain(part); });
   let last = 0, m: RegExpExecArray | null, i = 0;
   while ((m = re.exec(text))) {
     if (m.index > last) push(text.slice(last, m.index));
@@ -43,6 +59,8 @@ function inline(text: string, key = 0): React.ReactNode[] {
     else if (m[4] && /^(mailto:|#)/.test(m[5])) out.push(t.slice(1, t.indexOf("]")));
     else if (m[4] && !/^https?:\/\//.test(m[5])) out.push(<PathLink key={k} path={decodeURI(m[5])}>{t.slice(1, t.indexOf("]"))}</PathLink>);
     else if (m[4]) { const url = m[5]; out.push(<a key={k} href={url} title={url} onClick={(e) => { e.preventDefault(); openExternal(url); }}>{t.slice(1, t.indexOf("]"))}</a>); }
+    else if (m[6]) { let textUrl = m[6]; while (/[.,!?;:]$/.test(textUrl)) textUrl = textUrl.slice(0, -1); const url = /^https?:\/\//i.test(textUrl) ? textUrl : `https://${textUrl}`; out.push(<a key={k} href={url} title={url} onClick={(e) => { e.preventDefault(); openExternal(url); }}>{textUrl}</a>); if (textUrl.length < t.length) out.push(t.slice(textUrl.length)); }
+    else if (m[7] && looksLikePath(m[7])) out.push(<PathLink key={k} path={m[7]}>{m[7]}</PathLink>);
     last = m.index + t.length;
   }
   if (last < text.length) push(text.slice(last));

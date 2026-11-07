@@ -528,8 +528,10 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
         return (S.db.setting("models.routing") or {}).get(tier) or {}
 
     def available_agent_models(models: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        return [m for m in models if m.get("name") and m.get("provider_kind") not in ("claude_code", "codex_cli")
-                and not (m.get("capabilities") or {}).get("agentic")]
+        return [m for m in models if m.get("name") and
+                (m.get("provider_kind") == "hermes_agent" or
+                 (m.get("provider_kind") not in ("claude_code", "codex_cli") and
+                  not (m.get("capabilities") or {}).get("agentic")))]
 
     def choose_agent_model(tier: str, available: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         if not available:
@@ -539,6 +541,9 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
                        m.get("name") == preferred.get("model")), None)
         if pinned:
             return pinned
+        hermes = next((m for m in available if m.get("provider_kind") == "hermes_agent"), None)
+        if hermes:
+            return hermes
         if tier == "reasoning":
             return max(available, key=lambda m: (m.get("context_length") or 0, (m.get("capabilities") or {}).get("tools") is True,
                                                   m.get("provider_name", ""), m["name"]))

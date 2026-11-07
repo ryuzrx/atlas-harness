@@ -18,7 +18,7 @@ from ..db import DB, new_id, now
 from ..security import load_secret
 from .anthropic import AnthropicProvider
 from .base import ChatResult, ModelInfo, Provider, ProviderError
-from .cli_agents import ClaudeCodeProvider, CodexProvider, find_binary
+from .cli_agents import ClaudeCodeProvider, CodexProvider, HermesProvider, find_binary
 from .ollama import OllamaProvider
 from .openai_compat import OpenAICompatProvider
 
@@ -28,11 +28,12 @@ KINDS = {
     "anthropic": AnthropicProvider,
     "claude_code": ClaudeCodeProvider,
     "codex_cli": CodexProvider,
+    "hermes_agent": HermesProvider,
 }
 
 KIND_LABELS = {
     "ollama": "Ollama", "openai_compat": "OpenAI-compatible", "anthropic": "Claude API",
-    "claude_code": "Claude Code", "codex_cli": "Codex CLI",
+    "claude_code": "Claude Code", "codex_cli": "Codex CLI", "hermes_agent": "Atlas Agent",
 }
 
 
@@ -90,6 +91,8 @@ class ModelRouter:
 
     def ensure_defaults(self) -> None:
         """Seed providers that exist on this machine. Nothing is assumed to be running."""
+        # Keep the product name consistent for users who already had the default entry.
+        self.db.x("UPDATE providers SET name='Atlas Agent', updated_at=? WHERE kind='hermes_agent' AND name='Hermes Agent'", (now(),))
         existing = {r["kind"] for r in self.db.q("SELECT kind FROM providers")}
         t = now()
         seeds = []
@@ -99,6 +102,8 @@ class ModelRouter:
             seeds.append(("claude_code", "Claude Code", None, {}))
         if "codex_cli" not in existing and find_binary("codex"):
             seeds.append(("codex_cli", "Codex CLI", None, {}))
+        if "hermes_agent" not in existing and find_binary("hermes"):
+            seeds.append(("hermes_agent", "Atlas Agent", None, {}))
         for kind, name, url, cfg in seeds:
             self.db.insert("providers", {"id": new_id("prov"), "kind": kind, "name": name, "base_url": url,
                                          "config": cfg, "enabled": 1, "created_at": t, "updated_at": t})
