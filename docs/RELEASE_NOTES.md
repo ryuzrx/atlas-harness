@@ -1,5 +1,18 @@
 # Release notes
 
+## 0.5.8 — 2026-11-07
+
+### Updates
+
+- Atlas checks for new versions on its own and asks before updating. Choose **Update Now**, **Later**, or **Skip This Version**. You can also choose **Atlas › Check for Updates…** at any time.
+- Updates download from this project's GitHub releases. They're checked against the release's checksum and Atlas's app identity before anything is replaced. If the swap fails, your current version is put back.
+- Atlas restarts to finish updating. Anything that was running picks back up afterwards.
+
+### Fixes
+
+- The Dynamic Island no longer shows an empty question and "Thinking" under the list of working chats.
+- The session panel now points to the Access menu for attaching a project, and the chat footer explains that git changes ask first.
+
 ## 0.5.7 — 2026-11-07
 
 ### No step limit

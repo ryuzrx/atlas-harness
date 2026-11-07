@@ -76,7 +76,7 @@ export const SessionPanel = React.memo(function SessionPanel({ messages, cfg, on
         {project && <Row icon={<Folder size={17} strokeWidth={1.6} />}><span className="truncate" title={project.path}>{project.name}</span></Row>}
         {project && <div className="-mt-1.5 ml-[29px] text-xs font-mono text-ink-3 truncate" title={project.path}>{project.path}</div>}
         {git?.branch && <Row icon={<GitBranch size={17} strokeWidth={1.6} />}><span className="truncate font-mono text-sm">{git.branch}</span></Row>}
-        {!project && <div className="text-sm text-ink-3 mt-1">No project attached. Pick one in Tools → Project context.</div>}
+        {!project && <div className="text-sm text-ink-3 mt-1">No project attached. Pick one in the Access menu below the message box.</div>}
       </Section>
 
       <Section title="Context">

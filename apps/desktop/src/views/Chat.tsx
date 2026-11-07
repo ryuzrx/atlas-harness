@@ -809,7 +809,7 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
                 {!online && <div role="status" className="mb-2 mx-auto w-fit flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-xs text-ink-2">
                   <span className="working-spinner" />Reconnecting… running work keeps going and will resume</div>}
                 <Composer cfg={cfg} setCfg={setCfg} onSend={send} busy={busy} onStop={stop} />
-                <div className="mt-2.5 text-center text-[11.5px] text-ink-3">Atlas can make mistakes. Agents work on isolated branches and ask before risky commands.</div>
+                <div className="mt-2.5 text-center text-[11.5px] text-ink-3">Atlas can make mistakes. Agents work on isolated branches, and git changes ask first.</div>
               </div>
             </div>
           </>

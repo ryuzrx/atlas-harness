@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKSc
     var lastCaptureBounds: CGRect?
     var lastCaptureAt = Date.distantPast
     var companion: CompanionController?
+    let updater = Updater(current: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
@@ -54,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKSc
         }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         startBackend()
+        updater.start()
     }
 
     // The pet, island and menu bar keep working with the window closed; the Dock icon or menu reopens it.
@@ -542,6 +544,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKSc
         let appItem = NSMenuItem(); main.addItem(appItem)
         let app = NSMenu()
         app.addItem(withTitle: "About Atlas", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        let updates = app.addItem(withTitle: "Check for Updates…", action: #selector(Updater.checkFromMenu), keyEquivalent: "")
+        updates.target = updater
         app.addItem(.separator())
         app.addItem(withTitle: "Hide Atlas", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let other = app.addItem(withTitle: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")

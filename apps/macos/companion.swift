@@ -844,7 +844,7 @@ struct IslandView: View {
                         .buttonStyle(PressableStyle())
                     }
                 }
-            } else {
+            } else if !c.chatAsked.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
                                 Spacer(minLength: 56)
