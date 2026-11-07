@@ -44,7 +44,25 @@ class ChatService:
 
     # ------------------------------------------------------------------ lifecycle
     def recover(self) -> None:
+        resume = bool(self.db.setting("execution.auto_resume"))
         for m in self.db.q("SELECT * FROM chat_messages WHERE status='streaming'"):
+            data = m["data"] or {}
+            pid, model = data.get("provider_id"), data.get("model")
+            tries = int(data.get("resume_count") or 0)
+            if resume and tries < 2 and pid in self.router.providers and model:
+                # carry on from the text saved so far instead of dropping the reply
+                self.db.update("chat_messages", m["id"], {"data": {**data, "resume_count": tries + 1}})
+                conv = self.db.get("conversations", m["conversation_id"]) or {}
+                cfg = conv.get("config") or {}
+                messages = self._model_messages(m["conversation_id"], cfg, m["id"])
+                partial = m["content"] or ""
+                if partial.strip():
+                    messages += [{"role": "assistant", "content": partial},
+                                 {"role": "user", "content": "Your previous reply was cut off by a restart. Continue it exactly "
+                                                             "where it stopped. Do not repeat anything or add a preface."}]
+                self.streams[m["id"]] = asyncio.ensure_future(
+                    self._stream(m["conversation_id"], m["id"], pid, model, messages, cfg, prefix=partial))
+                continue
             self.db.update("chat_messages", m["id"], {"status": "error",
                                                        "content": (m["content"] or "") + "\n\n_Interrupted by restart._"})
         for m in self.db.q("SELECT * FROM chat_messages WHERE status='running' AND task_id IS NOT NULL"):
@@ -141,14 +159,14 @@ class ChatService:
         self._interrupt(cid)
         cfg = {**(conv["config"] or {}), **(config or {})}
         mode = cfg.get("mode") or "model"
-        tools = [t for t in (cfg.get("tools") or []) if isinstance(t, str)]
-        access_level = cfg.get("access_level") if cfg.get("access_level") in ("read_only", "workspace", "computer_use") else "workspace"
-        if access_level == "read_only" and mode == "model" and not tools:
-            tools = ["read"]
-        # A project (Work) chat is a workspace session, not a plain Q&A stream: without file/terminal
-        # tools the model can only print shell commands for the user to run. Give it the project tools.
-        if mode == "model" and cfg.get("project_id") and "project" in tools and not any(g in AGENT_TOOL_GROUPS for g in tools):
-            tools = tools + (["read"] if access_level == "read_only" else ["read", "write", "shell", "git"])
+        # Access is either the workspace or Computer Use; tools can't be narrowed from the chat.
+        access_level = "computer_use" if cfg.get("access_level") == "computer_use" else "workspace"
+        # Tools are automatic: a project chat gets everything it needs (git still asks unless the
+        # message asks for it); a chat without a project is a plain, fast model conversation.
+        if mode == "model" and cfg.get("project_id"):
+            tools = ["project", "read", "write", "shell", "git", "memory", "mcp"]
+        else:
+            tools = []
         if mode == "team" and access_level == "computer_use":
             raise ChatError("Atlas Computer Use is not available for team chats.")
 
@@ -170,9 +188,10 @@ class ChatService:
             task = self.orch.submit_objective(cfg["team_id"], self._context_prompt(cid, prompt, user["id"]),
                                               cfg.get("project_id"), _title_from(content or "Objective"),
                                               config={"access_level": access_level, "tool_limit": tools or None,
+                                                      "user_request": content,
                                                       "conversation_id": cid,
                                                       "computer_consent_for": cfg.get("computer_consent_for"),
-                                               "auto_approve": bool(cfg.get("auto_approve"))})
+                                               "auto_approve": True})
             label = {"mode": "team", "team_id": cfg["team_id"]}
         elif mode == "agent" or any(g in AGENT_TOOL_GROUPS for g in tools) or access_level == "computer_use":
             if mode == "agent":
@@ -185,9 +204,10 @@ class ChatService:
                 "title": _title_from(content or "Chat request"), "description": self._context_prompt(cid, prompt, user["id"]),
                 "agent_id": agent["id"], "team_id": agent.get("team_id"), "project_id": cfg.get("project_id"),
                 "kind": "code", "config": {"tool_limit": tools or None, "access_level": access_level,
+                                               "user_request": content,
                                                "conversation_id": cid,
                                                "computer_consent_for": cfg.get("computer_consent_for"),
-                                               "auto_approve": bool(cfg.get("auto_approve"))}})
+                                               "auto_approve": True}})
             label = {"mode": "agent", "agent_id": agent["id"], "agent_name": agent["name"]}
         else:
             task = None
@@ -243,8 +263,8 @@ class ChatService:
         return msgs
 
     async def _stream(self, cid: str, mid: str, pid: str, model: str, messages: List[Dict[str, Any]],
-                      cfg: Dict[str, Any]) -> None:
-        buf: List[str] = []
+                      cfg: Dict[str, Any], prefix: str = "") -> None:
+        buf: List[str] = [prefix] if prefix else []
         last_save = time.monotonic()
 
         async def on_token(tok: str) -> None:
@@ -259,7 +279,8 @@ class ChatService:
         try:
             params = {"temperature": cfg["temperature"]} if cfg.get("temperature") is not None else None
             res = await self.router.chat(pid, model, messages, on_token=on_token, params=params)
-            text = "".join(buf) or res.text
+            streamed = "".join(buf[1:] if prefix else buf)
+            text = prefix + (streamed or res.text or "")
             extra = {"usage": res.usage, "latency_ms": res.latency_ms}
         except asyncio.CancelledError:
             text, status = "".join(buf), "stopped"

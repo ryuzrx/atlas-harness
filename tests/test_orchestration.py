@@ -168,8 +168,9 @@ def test_persistence_and_restart_recovery(repo):
         assert c.get("/api/settings", headers=H).json()["execution.max_concurrent_tasks"] == 5
         assert any(x["id"] == team["id"] for x in c.get("/api/teams", headers=H).json())
         task = c.get(f"/api/tasks/{t['id']}", headers=H).json()
-        assert task["status"] == "failed" and "restart" in task["transitions"][-1]["reason"]
-        assert c.post(f"/api/tasks/{t['id']}/retry", headers=H).status_code == 200
+        # interrupted work resumes on its own instead of failing
+        assert task["config"]["resume_count"] == 1
+        assert any("Resuming" in (x.get("reason") or "") for x in task["transitions"])
 
 
 def test_provider_failure_marks_task_failed(repo):
@@ -255,3 +256,32 @@ def test_always_allow_remembers_the_command(repo):
         assert saved == ["npm install && npm run build"]
         from atlas.security import classify_command
         assert classify_command("npm install && npm run build", "ask", [], always=saved)[0] == "allow"
+
+
+def test_interrupted_task_resumes_after_restart():
+    """A run cut off by a restart is re-queued with a note of what it already did, at most twice."""
+    from atlas.db import DB, new_id, now
+    from atlas.config import data_dir
+    from atlas.orchestrator import Orchestrator
+
+    class Bus:
+        def emit(self, *a, **k): pass
+        def changed(self, *a, **k): pass
+        def broadcast(self, *a, **k): pass
+
+    db = DB(data_dir() / "resume.db")
+    tid = new_id("task")
+    db.insert("tasks", {"id": tid, "title": "Fix it", "description": "Fix the bug", "kind": "code", "status": "running",
+                        "created_at": now(), "updated_at": now(), "config": {}})
+    db.insert("events", {"task_id": tid, "type": "tool_call", "data": {"tool": "run_command", "args": {"command": "npm test"}}, "at": now()})
+    o = Orchestrator.__new__(Orchestrator)
+    o.db, o.bus = db, Bus()
+    o.wake = type("Wake", (), {"set": lambda self: None})()
+    o.recover()
+    t = db.get("tasks", tid)
+    assert t["status"] == "queued" and t["config"]["resume_count"] == 1
+    assert "run_command: npm test" in t["config"]["resume_note"]
+    for _ in range(2):   # interrupted again twice: the second time it gives up
+        db.update("tasks", tid, {"status": "running"})
+        o.recover()
+    assert db.get("tasks", tid)["status"] == "failed"

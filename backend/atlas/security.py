@@ -65,13 +65,15 @@ DESTRUCTIVE_PATTERNS = [
 ]
 
 
-# Auto-approve still stops for these: they delete data, rewrite history, publish, or change permissions.
-# Everyday build commands (npm install, pip install, mv, test runners...) are approved automatically.
-CRITICAL_PATTERNS = [
-    r"\brm\s", r"\bgit\s+(push|reset\s+--hard|clean|checkout\s+--|rebase|branch\s+-D|stash\s+drop)",
-    r"\bcurl\b.*\|\s*(sh|bash|zsh)", r"\bwget\b.*\|\s*(sh|bash)", r"\bnpm\s+publish\b",
-    REDIRECT_TO_SYSTEM, r"\bchmod\b", r"\bchown\b", r"\bkill(all)?\b",
-]
+# Git commands that change history or the remote. They always ask, even with auto-approve, unless the
+# user's own message asked for git work ("commit this", "push the branch"...).
+GIT_WRITE = r"\bgit\s+(commit|push|merge|rebase|reset|tag|cherry-pick|am|revert|clean|checkout\s+--|branch\s+-[dD]|stash\s+drop)\b"
+GIT_REQUEST = re.compile(r"\b(git|commit|commits|committed|push|merge|rebase|branch|tag|pull request|PR)\b", re.I)
+
+
+def wants_git(prompt: str) -> bool:
+    """True when the user's request itself asks for git work."""
+    return bool(GIT_REQUEST.search(prompt or ""))
 
 
 def normalize_command(cmd: str) -> str:
@@ -80,7 +82,7 @@ def normalize_command(cmd: str) -> str:
 
 
 def classify_command(cmd: str, policy: str, allowlist: List[str], auto_approve: bool = False,
-                     always: Optional[List[str]] = None) -> Tuple[str, str]:
+                     always: Optional[List[str]] = None, git_requested: bool = False) -> Tuple[str, str]:
     """Return (decision, reason). decision in {'deny','ask','allow'}."""
     stripped = cmd.strip()
     for pat in DENY_PATTERNS:
@@ -89,11 +91,16 @@ def classify_command(cmd: str, policy: str, allowlist: List[str], auto_approve: 
     # the user chose "Always allow" for exactly this command: honor it (blocked commands stay blocked)
     if always and normalize_command(stripped) in {normalize_command(a) for a in always}:
         return "allow", "You chose to always allow this command."
-    for pat in (CRITICAL_PATTERNS if auto_approve else DESTRUCTIVE_PATTERNS):
+    if re.search(GIT_WRITE, stripped):
+        if not git_requested:
+            return "ask", "Git changes need your OK because your message didn't ask for git."
+        return "allow", "Your message asked for this git work."
+    if auto_approve:
+        # tools run on their own; only git (above) asks, and blocked commands stay blocked
+        return "allow", "Tools are automatic."
+    for pat in DESTRUCTIVE_PATTERNS:
         if re.search(pat, stripped):
             return "ask", "Potentially destructive command requires confirmation."
-    if auto_approve:
-        return "allow", "Auto-approve is on for this chat."
     if policy == "auto":
         return "allow", "Auto policy."
     # allowlisted only when every pipeline segment starts with an allowlisted prefix

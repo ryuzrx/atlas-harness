@@ -99,7 +99,40 @@ def _bare_json_objects(text: str) -> List[str]:
     return out
 
 
+# XML-style calls some models print as text instead of using the API's tool calls, e.g. DeepSeek's
+# <｜DSML｜ invoke name="run_command"><｜DSML｜ parameter name="command" string="true">ls</｜DSML｜ parameter>
+# and the plain <invoke name="..."><parameter name="...">...</parameter></invoke> form.
+INVOKE_BLOCK = re.compile(r"<[^<>]*?\binvoke\s+name=\"([^\"]+)\"[^<>]*>(.*?)</[^<>]*?\binvoke\s*>", re.S)
+PARAM_BLOCK = re.compile(r"<[^<>]*?\bparameter\s+name=\"([^\"]+)\"([^<>]*)>(.*?)</[^<>]*?\bparameter\s*>", re.S)
+CALLS_WRAPPER = re.compile(r"<[^<>]*?\b(?:function_)?calls\s*>|</[^<>]*?\b(?:function_)?calls\s*>")
+
+
+def _parse_invoke_calls(text: str) -> List[Dict[str, Any]]:
+    calls = []
+    for i, m in enumerate(INVOKE_BLOCK.finditer(text)):
+        args: Dict[str, Any] = {}
+        for p in PARAM_BLOCK.finditer(m.group(2)):
+            name, attrs, raw = p.group(1), p.group(2), p.group(3).strip()
+            value: Any = raw
+            if 'string="false"' in attrs or 'string="true"' not in attrs:
+                try:
+                    value = json.loads(raw)   # numbers, booleans, objects; plain text stays text
+                except ValueError:
+                    value = raw
+            args[name] = value
+        calls.append({"id": f"text_{i}", "name": m.group(1), "arguments": args})
+    return calls
+
+
+def strip_tool_markup(text: str) -> str:
+    """Remove printed tool-call markup so it never shows up as the reply."""
+    return CALLS_WRAPPER.sub("", INVOKE_BLOCK.sub("", text or "")).strip()
+
+
 def parse_text_tool_calls(text: str) -> List[Dict[str, Any]]:
+    invoked = _parse_invoke_calls(text or "")
+    if invoked:
+        return invoked[:1]
     calls = []
     blocks = [m.group(1) for m in TOOL_BLOCK.finditer(text)] or _bare_json_objects(text)
     for i, raw in enumerate(blocks):
@@ -173,7 +206,7 @@ class AgentRunner:
                 if calls:
                     mode = "text"  # keep the conversation consistent with what the model actually does
                     msgs[0]["content"] += "\n\n" + text_protocol_instructions(schemas)
-            visible = TOOL_BLOCK.sub("", res.text).strip() if mode == "text" else res.text.strip()
+            visible = strip_tool_markup(TOOL_BLOCK.sub("", res.text) if mode == "text" else res.text)
             await emit("llm_response", {"step": step, "latency_ms": round((time.perf_counter() - t0) * 1000),
                                          "usage": res.usage, "tool_calls": len(calls)})
             if visible:

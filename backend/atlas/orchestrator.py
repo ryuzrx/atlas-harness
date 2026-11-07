@@ -20,6 +20,7 @@ from .db import DB, new_id, now
 from .events import EventBus
 from .mcp import MCPManager
 from .providers import ModelRouter, ProviderError
+from .security import wants_git
 from .tools import ToolContext
 
 TERMINAL = {"completed", "failed", "cancelled"}
@@ -84,21 +85,46 @@ class Orchestrator:
             t.cancel()
         await asyncio.gather(*self.running.values(), return_exceptions=True)
 
+    MAX_AUTO_RESUMES = 2
+
     def recover(self) -> None:
-        """Mark interrupted work as failed. Tool calls are never replayed automatically."""
+        """Pick up work the app was doing when it stopped. Tool calls are never replayed: a resumed run
+        starts a fresh agent turn in the same worktree, told which steps already ran."""
+        resume = bool(self.db.setting("execution.auto_resume"))
         for t in self.db.q("SELECT * FROM tasks WHERE status IN ('planning','running','reviewing','waiting_approval')"):
             is_root = t["kind"] == "objective"
             has_live_children = is_root and self.db.one(
                 "SELECT 1 FROM tasks WHERE parent_id=? AND status NOT IN ('completed','failed','cancelled')", (t["id"],))
             if is_root and t["status"] == "running" and has_live_children:
                 continue
+            cfg = t.get("config") or {}
+            count = int(cfg.get("resume_count") or 0)
+            if resume and count < self.MAX_AUTO_RESUMES:
+                note = self._resume_note(t["id"])
+                self.db.update("tasks", t["id"], {"config": {**cfg, "resume_count": count + 1, "resume_note": note}, "error": None})
+                self._transition(t, "queued", "Resuming after the app restarted.", force=True)
+                self.bus.emit("task_resumed", {"attempt": count + 1}, task_id=t["id"])
+                continue
             self._transition(t, "failed", "Interrupted: the application restarted while this task was active. "
                                           "Inspect its events and retry when ready.", force=True)
             self.db.update("tasks", t["id"], {"error": "interrupted by restart"})
         self.db.x("UPDATE approvals SET status='expired', decided_at=? WHERE status='pending'", (now(),))
         self.db.x("UPDATE agents SET status='idle' WHERE status IN ('running','waiting')")
-        for t in self.db.q("SELECT * FROM tasks WHERE parent_id IS NOT NULL AND status IN ('queued','ready')"):
-            pass  # scheduler resumes these
+
+    def _resume_note(self, task_id: str) -> str:
+        """What the interrupted run already did, so the resumed agent continues instead of redoing it."""
+        rows = self.db.q("SELECT type, data FROM events WHERE task_id=? AND type IN ('tool_call','agent_message') "
+                         "ORDER BY id DESC LIMIT 20", (task_id,))
+        lines = []
+        for r in reversed(rows):
+            d = r["data"] if isinstance(r["data"], dict) else json.loads(r["data"] or "{}")
+            if r["type"] == "tool_call":
+                args = d.get("args") or {}
+                target = next((str(args[k]) for k in ("command", "path", "query", "pattern") if args.get(k)), "")
+                lines.append(f"- {d.get('tool')}: {target[:160]}")
+            elif d.get("text"):
+                lines.append(f"- said: {str(d['text'])[:200]}")
+        return "\n".join(lines)
 
     async def _loop(self) -> None:
         while True:
@@ -794,6 +820,11 @@ depends on the work it checks; no cycles."""
 
     def _task_prompt(self, task, deps: List[Optional[Dict[str, Any]]], workspace: Path) -> str:
         parts = [f"Task: {task['title']}", task["description"] or ""]
+        cfg = task.get("config") or {}
+        if cfg.get("resume_count"):
+            parts.append("RESUMING: Atlas restarted while you were working on this task. Your earlier file changes "
+                         "are still in the workspace. Check the current state, then continue from where you stopped; "
+                         "do not redo finished steps." + (f"\nSteps already taken:\n{cfg['resume_note']}" if cfg.get("resume_note") else ""))
         if task.get("acceptance"):
             parts.append("Acceptance criteria:\n" + "\n".join(f"- {a}" for a in task["acceptance"]))
         parent = self.db.get("tasks", task["parent_id"]) if task.get("parent_id") else None
@@ -825,10 +856,14 @@ depends on the work it checks; no cycles."""
         auto_approve = bool((task.get("config") or {}).get("auto_approve"))
         if auto_approve:
             settings = {**settings, "_auto_approve": True}
+        # the user's own request decides whether git work may run without asking
+        request_text = (task.get("config") or {}).get("user_request") or task.get("description") or ""
+        if wants_git(request_text):
+            settings = {**settings, "_git_requested": True}
 
         async def request_approval(kind, payload):
-            # Auto-approve covers commit/connector prompts too; risky commands still ask via classify_command.
-            if auto_approve and kind in ("git_commit", "mcp"):
+            # Auto-approve covers connector prompts; commits only skip asking when the request asked for git.
+            if auto_approve and kind == "mcp":
                 return True
             return await self._approval(task, agent, kind, payload)
 

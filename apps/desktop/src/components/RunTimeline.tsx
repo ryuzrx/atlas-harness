@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Check, ChevronRight, FilePen, FileText, FolderOpen, GitBranch, Search, SquareTerminal, Wrench } from "lucide-react";
+import { AlertCircle, BookOpen, Brain, Check, ChevronRight, FilePen, FilePlus, FileText, FolderOpen, GitBranch, Globe, Plug, Search, SquareTerminal, Wrench } from "lucide-react";
 import { AtlasEvent, api, subscribe } from "../api";
 import { AnimatedMark } from "./AnimatedMark";
 import { cx } from "./ui";
@@ -10,10 +10,11 @@ export interface RunStep {
   verb: string;
   target: string;
   mono: boolean;
-  kind: "command" | "read" | "list" | "search" | "write" | "git" | "other";
+  kind: "command" | "read" | "list" | "search" | "write" | "create" | "git" | "memory" | "mcp" | "skill" | "web" | "other";
   state: "running" | "done" | "failed";
   output?: string;
   ms?: number;
+  exit?: number;
 }
 
 const firstString = (args: Record<string, any>) => {
@@ -22,23 +23,30 @@ const firstString = (args: Record<string, any>) => {
   return (any as string) || "";
 };
 
+const GIT_LABEL: Record<string, string> = { status: "Checked git status", diff: "Viewed the diff", log: "Read git history", show: "Viewed a commit", commit: "Committed" };
+
 function describe(tool: string, args: Record<string, any>): Pick<RunStep, "verb" | "target" | "mono" | "kind"> {
   const target = firstString(args || {});
   switch (tool) {
     case "run_command": return { verb: "Ran", target: String(args?.command || target), mono: true, kind: "command" };
     case "read_file": return { verb: "Read", target, mono: true, kind: "read" };
     case "list_dir": return { verb: "Listed", target: target || ".", mono: true, kind: "list" };
-    case "search": return { verb: "Searched", target, mono: true, kind: "search" };
-    case "write_file": return { verb: "Wrote", target, mono: true, kind: "write" };
+    case "search": return { verb: "Searched for", target, mono: true, kind: "search" };
+    case "write_file": return { verb: "Wrote", target, mono: true, kind: "create" };
     case "edit_file": return { verb: "Edited", target, mono: true, kind: "write" };
     case "apply_patch": return { verb: "Applied a patch", target: "", mono: false, kind: "write" };
-    case "git": return { verb: "Git", target: String(args?.command || args?.args || target), mono: true, kind: "git" };
-    case "remember": return { verb: "Saved a note", target: "", mono: false, kind: "other" };
-    case "skill": return { verb: "Used skill", target, mono: false, kind: "other" };
-    case "mcp": return { verb: "Called", target, mono: false, kind: "other" };
-    default: return { verb: tool.replace(/_/g, " "), target, mono: false, kind: "other" };
+    case "git": return { verb: GIT_LABEL[String(args?.action)] || "Git", target: args?.action === "commit" ? String(args?.message || "") : String(args?.ref || ""), mono: args?.action !== "commit", kind: "git" };
+    case "remember": return { verb: "Saved to memory", target: String(args?.key || ""), mono: false, kind: "memory" };
+    case "skill": return { verb: "Used skill", target, mono: false, kind: "skill" };
+    case "mcp": return { verb: "Called", target: [args?.server, args?.tool].filter(Boolean).join(" › ") || target, mono: false, kind: "mcp" };
+    case "web_fetch": case "fetch_url": return { verb: "Opened", target, mono: false, kind: "web" };
+    default: return { verb: tool.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()), target, mono: false, kind: "other" };
   }
 }
+
+const RUNNING_VERB: Partial<Record<RunStep["kind"], string>> = {
+  command: "Running", read: "Reading", list: "Listing", search: "Searching for", write: "Editing", create: "Writing", git: "Running git", memory: "Saving to memory", mcp: "Calling", web: "Opening",
+};
 
 /** Collapse the raw event stream into one row per tool call: what ran, whether it worked, and its output. */
 export function buildSteps(events: AtlasEvent[]): RunStep[] {
@@ -56,6 +64,7 @@ export function buildSteps(events: AtlasEvent[]): RunStep[] {
         open.state = failed ? "failed" : "done";
         open.output = String(d.output || "");
         open.ms = d.ms;
+        if (d.exit_code != null) open.exit = Number(d.exit_code);
       }
     }
   }
@@ -83,30 +92,41 @@ export function useRunSteps(taskId?: string): { steps: RunStep[]; loading: boole
 }
 
 const ICON: Record<RunStep["kind"], React.ElementType> = {
-  command: SquareTerminal, read: FileText, list: FolderOpen, search: Search, write: FilePen, git: GitBranch, other: Wrench,
+  command: SquareTerminal, read: FileText, list: FolderOpen, search: Search, write: FilePen, create: FilePlus, git: GitBranch,
+  memory: Brain, mcp: Plug, skill: BookOpen, web: Globe, other: Wrench,
 };
+
+/** "src/components/App.tsx" -> dim "src/components/" + bright "App.tsx" */
+function PathLabel({ path }: { path: string }) {
+  const i = path.lastIndexOf("/");
+  if (i <= 0 || i === path.length - 1 || /\s/.test(path)) return <>{path}</>;
+  return <><span className="text-ink-3">{path.slice(0, i + 1)}</span>{path.slice(i + 1)}</>;
+}
 
 function StepRow({ s }: { s: RunStep }) {
   const [open, setOpen] = useState(false);
   const Icon = ICON[s.kind];
   const canOpen = !!s.output?.trim();
+  const running = s.state === "running";
+  const isPath = s.mono && (s.kind === "read" || s.kind === "write" || s.kind === "create" || s.kind === "list");
   return (
     <div>
       <button onClick={() => canOpen && setOpen((o) => !o)} aria-expanded={canOpen ? open : undefined} disabled={!canOpen}
-        className={cx("w-full min-h-8 flex items-center gap-2.5 px-1 py-1 rounded-md text-left", canOpen && "hover:bg-hover")}>
-        <span className="h-4 w-4 shrink-0 flex items-center justify-center">
-          {s.state === "running" ? <AnimatedMark size={14} play="shimmer" />
-            : s.state === "failed" ? <AlertCircle size={14} className="text-bad" /> : <Check size={14} strokeWidth={2.2} className="text-ink-3" />}
+        className={cx("group/step w-full min-h-8 flex items-center gap-2.5 px-1.5 py-1 rounded-lg text-left transition-colors", canOpen && "hover:bg-hover")}>
+        <span className="h-5 w-5 shrink-0 flex items-center justify-center rounded-md">
+          {running ? <span className="working-spinner" /> : s.state === "failed" ? <AlertCircle size={14} className="text-bad" />
+            : <Icon size={14} strokeWidth={1.7} className="text-ink-3" />}
         </span>
-        <Icon size={14} strokeWidth={1.6} className="shrink-0 text-ink-3" />
-        <span className={cx("text-sm shrink-0", s.state === "running" ? "text-ink" : "text-ink-2")}>{s.state === "running" && s.kind === "command" ? "Running" : s.verb}</span>
-        {s.target && <span className={cx("min-w-0 truncate text-sm text-ink", s.mono && "font-mono text-[13px] px-1.5 py-px rounded-sm bg-surface-2")} title={s.target}>{s.target}</span>}
+        <span className={cx("text-[13.5px] shrink-0", running ? "chat-shimmer" : "text-ink-2")}>{running ? RUNNING_VERB[s.kind] || s.verb : s.verb}</span>
+        {s.target && <span className={cx("min-w-0 truncate text-[13px] text-ink", s.mono && "font-mono text-[12.5px] px-1.5 py-px rounded-md bg-surface-2 border border-line")} title={s.target}>
+          {isPath ? <PathLabel path={s.target} /> : s.target}</span>}
         <span className="flex-1" />
-        {s.state === "failed" && <span className="text-xs text-bad shrink-0">failed</span>}
-        {s.ms != null && s.state !== "running" && s.ms >= 1000 && <span className="text-xs text-ink-3 tnum shrink-0">{(s.ms / 1000).toFixed(1)}s</span>}
+        {s.state === "failed" && <span className="text-[11px] text-bad shrink-0">{s.exit != null && s.exit !== 0 ? `exit ${s.exit}` : "failed"}</span>}
+        {s.state === "done" && <Check size={13} strokeWidth={2.2} className="shrink-0 text-ink-3 opacity-0 group-hover/step:opacity-100 transition-opacity" />}
+        {s.ms != null && !running && s.ms >= 1000 && <span className="text-[11px] text-ink-3 tnum shrink-0">{(s.ms / 1000).toFixed(1)}s</span>}
         {canOpen && <ChevronRight size={12} className={cx("text-ink-3 shrink-0 transition-transform duration-150", open && "rotate-90")} />}
       </button>
-      {open && <pre className="selectable ml-[26px] mr-1 mb-1.5 p-2.5 rounded-md bg-base border border-line text-xs leading-[1.5] font-mono whitespace-pre-wrap break-words max-h-[260px] overflow-auto text-ink-2">{(s.output || "").slice(0, 6000)}</pre>}
+      {open && <pre className="selectable ml-[34px] mr-1 mt-0.5 mb-2 p-3 rounded-lg bg-base border border-line text-xs leading-[1.55] font-mono whitespace-pre-wrap break-words max-h-[280px] overflow-auto text-ink-2">{(s.output || "").slice(0, 8000)}</pre>}
     </div>
   );
 }
@@ -134,9 +154,9 @@ export function RunTimeline({ taskId, live }: { taskId: string; live: boolean })
 export function summarizeSteps(steps: RunStep[]): string {
   const n = (k: RunStep["kind"]) => steps.filter((s) => s.kind === k).length;
   const parts: string[] = [];
-  const cmds = n("command"), reads = n("read") + n("list") + n("search"), writes = n("write");
+  const cmds = n("command"), reads = n("read") + n("list") + n("search"), writes = n("write") + n("create");
   if (cmds) parts.push(`Ran ${cmds} command${cmds === 1 ? "" : "s"}`);
   if (writes) parts.push(`Changed ${writes} file${writes === 1 ? "" : "s"}`);
-  if (reads) parts.push(`Read ${reads}`);
+  if (reads) parts.push(`Looked at ${reads} file${reads === 1 ? "" : "s"}`);
   return parts.join(" · ") || (steps.length ? `${steps.length} steps` : "");
 }

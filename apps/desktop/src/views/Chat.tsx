@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowUp, Square, Plus, Box, Wrench, ChevronDown, Check, X, FileText, Users, Bot, ChevronRight,
-  Copy, Pencil, Columns2, Volume2, AlertCircle, Terminal, SlidersHorizontal, ExternalLink, Loader2, Code2, Layers, Sparkles, PanelRight, Cpu, ShieldCheck,
+  ArrowUp, Square, Plus, Box, ChevronDown, Check, X, FileText, Users, Bot, ChevronRight,
+  Copy, Pencil, Columns2, Volume2, AlertCircle, Terminal, SlidersHorizontal, ExternalLink, Loader2, Code2, Layers, Sparkles, PanelRight, Cpu,
 } from "lucide-react";
-import { Agent, api, Approval, Model, Project, Provider, subscribe, Task, Team, useApi } from "../api";
+import { Agent, api, Approval, Model, Project, Provider, subscribe, Task, Team, useApi, useConnected } from "../api";
 import { BrandMark, brandFor } from "../components/Brand";
 import { ChatModelPicker } from "../components/ChatModelPicker";
 import { SessionPanel } from "../components/SessionPanel";
@@ -34,21 +34,6 @@ const DRAFT_KEY = "atlas_chat_draft_cfg";
 export const loadDraft = (): ChatConfig => { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}"); } catch { return {}; } };
 export const saveDraft = (c: ChatConfig) => localStorage.setItem(DRAFT_KEY, JSON.stringify(c));
 
-const TOOLS: { id: string; label: string; icon?: string }[] = [
-  { id: "project", label: "Project context" },
-  { id: "read", label: "Read files" },
-  { id: "write", label: "Edit files" },
-  { id: "shell", label: "Terminal" },
-  { id: "git", label: "Git" },
-  { id: "memory", label: "Memory" },
-  { id: "mcp", label: "MCP integrations" },
-];
-const TOOL_HINT: Record<string, string> = {
-  project: "Adds the project's file list and README to the model's context",
-  read: "Read files, list folders, search", write: "Create and edit files on an isolated branch",
-  shell: "Run commands; risky ones ask for approval", git: "Status, diff, commit on the run's branch",
-  memory: "Save notes to team and project memory", mcp: "Call configured MCP servers",
-};
 const MAX_FILE = 200_000;
 const MAX_IMAGE = 4 * 1024 * 1024;
 
@@ -146,52 +131,9 @@ function ModelMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => v
   return <ChatModelPicker cfg={cfg} set={set} models={h.models} providers={h.providers} agents={h.agents} loading={h.modelsLoading} />;
 }
 
-function ToolsMenu({ cfg, set, h, groups }: { cfg: ChatConfig; set: (p: ChatConfig) => void; h: ReturnType<typeof useHarnessData>; groups: Record<string, string> }) {
-  const [open, setOpen] = useState(false);
-  const tools = cfg.tools || [];
-  const mode = cfg.mode || "model";
-  const agent = h.agents.find((a) => a.id === cfg.agent_id);
-  const toggle = (id: string) => set({ tools: tools.includes(id) ? tools.filter((t) => t !== id) : [...tools, id] });
-  const available = TOOLS.filter((t) => t.id === "project" || groups[t.id]);
-  const allowedByAgent = (id: string) => mode !== "agent" || !agent || id === "project" || (agent.tools || []).includes(id);
-  return (
-    <div className="relative">
-      <Chip icon={<Wrench size={16} strokeWidth={1.6} />} label={tools.length ? `${tools.length}` : ""} title="Tools and project" open={open} onClick={() => setOpen((o) => !o)} />
-      <Popover open={open} onClose={() => setOpen(false)} width={330}>
-        <MenuLabel>Project</MenuLabel>
-        <div className="px-1.5 pb-1">
-          <select value={cfg.project_id || ""} onChange={(e) => set({ project_id: e.target.value || undefined })} aria-label="Project"
-            className="w-full h-8 px-2 rounded-md bg-base border border-line text-sm text-ink outline-none">
-            <option value="">No project (scratch folder)</option>
-            {h.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </div>
-        <MenuLabel>Capabilities</MenuLabel>
-        {available.map((t) => {
-          const ok = allowedByAgent(t.id);
-          return (
-            <button key={t.id} onClick={() => ok && toggle(t.id)} disabled={!ok} role="menuitemcheckbox" aria-checked={tools.includes(t.id)}
-              className="w-full flex items-start gap-2.5 px-2.5 py-2 rounded-md text-left hover:bg-hover disabled:opacity-40">
-              <span className={cx("mt-0.5 h-4 w-4 rounded-sm border flex items-center justify-center shrink-0", tools.includes(t.id) ? "bg-ink border-ink text-[var(--base)]" : "border-line-strong")}>
-                {tools.includes(t.id) && <Check size={11} strokeWidth={3} />}</span>
-              <span className="min-w-0"><span className="block text-sm text-ink">{t.label}</span>
-                <span className="block text-xs text-ink-3">{ok ? TOOL_HINT[t.id] : `${agent?.name} doesn't have this permission`}</span></span>
-            </button>
-          );
-        })}
-        <div className="px-2.5 pt-2 pb-1.5 text-xs text-ink-3 leading-relaxed">
-          {mode === "model" ? "With file, terminal or git tools, the model runs as the Atlas Assistant agent in a sandbox." :
-            mode === "agent" ? "Selected tools narrow this agent's permissions for the run. None selected: the agent's own permissions." :
-              "Team agents use their own permissions."} Risky commands always ask first.
-        </div>
-      </Popover>
-    </div>
-  );
-}
-
 function AccessMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => void; h: ReturnType<typeof useHarnessData> }) {
   const [open, setOpen] = useState(false);
-  const level = cfg.access_level || "workspace";
+  const level = cfg.access_level === "computer_use" ? "computer_use" : "workspace";
   const agent = cfg.mode === "agent" ? h.agents.find((a) => a.id === cfg.agent_id) : undefined;
   const provider = h.providers.find((p) => p.id === (agent?.provider_id || cfg.provider_id));
   const modelName = agent?.model || cfg.model;
@@ -204,8 +146,7 @@ function AccessMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => 
   // connection is treated as local; every custom endpoint gets the screenshot disclosure.
   const localProvider = provider?.kind === "ollama" && !provider.base_url;
   const options = [
-    { id: "read_only" as const, label: "Read only", hint: "Read project files and search. No edits or commands." },
-    { id: "workspace" as const, label: "Workspace", hint: "Use the selected tools within this project." },
+    { id: "workspace" as const, label: "Workspace", hint: "Atlas uses every tool it needs. Git changes ask first unless you ask for them." },
   ];
   const enableComputerUse = () => {
     if (!computerReady) return;
@@ -219,8 +160,17 @@ function AccessMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => 
     setOpen(false);
   };
   return <div className="relative">
-    <Chip icon={<SlidersHorizontal size={15} strokeWidth={1.6} />} label={level === "read_only" ? "Read only" : level === "computer_use" ? "Computer Use" : ""} title="Access" open={open} onClick={() => setOpen((v) => !v)} />
+    <Chip icon={<SlidersHorizontal size={15} strokeWidth={1.6} />} label={level === "computer_use" ? "Computer Use" : ""} title="Access" open={open} onClick={() => setOpen((v) => !v)} />
     <Popover open={open} onClose={() => setOpen(false)} width={300}>
+      <MenuLabel>Project</MenuLabel>
+      <div className="px-1.5 pb-1">
+        <select value={cfg.project_id || ""} onChange={(e) => set({ project_id: e.target.value || undefined })} aria-label="Project"
+          className="w-full h-8 px-2 rounded-md bg-base border border-line text-sm text-ink outline-none">
+          <option value="">No project · plain chat</option>
+          {h.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <div className="px-1 pt-1.5 text-xs text-ink-3 leading-relaxed">{cfg.project_id ? "Atlas uses files, terminal and connectors as needed. Git changes ask first unless you ask for them." : "Pick a project to let Atlas work on files."}</div>
+      </div>
       <MenuLabel>Access for this chat</MenuLabel>
       {options.map((o) => <MenuRow key={o.id} active={level === o.id} onClick={() => { set({ access_level: o.id }); setOpen(false); }} hint={o.hint}>{o.label}</MenuRow>)}
       <MenuRow active={level === "computer_use"} disabled={!computerReady} onClick={enableComputerUse}
@@ -245,7 +195,6 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
 }) {
   const h = useHarnessData();
   const { settings } = useStore();
-  const { data: meta } = useApi<any>("/meta");
   const toast = useToast();
   const [text, setText] = useState("");
   const [att, setAtt] = useState<Attachment[]>([]);
@@ -349,12 +298,6 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
           className="h-8 w-8 rounded-lg flex items-center justify-center text-ink-2 hover:text-ink hover:bg-hover shrink-0"><Plus size={18} strokeWidth={1.6} /></button>
         <AgentMenu cfg={cfg} set={setCfg} h={h} />
         <AccessMenu cfg={cfg} set={setCfg} h={h} />
-        <ToolsMenu cfg={cfg} set={setCfg} h={h} groups={meta?.permission_groups || {}} />
-        <button onClick={() => setCfg({ auto_approve: !cfg.auto_approve })} aria-pressed={!!cfg.auto_approve} disabled={cfg.access_level === "read_only"}
-          title={cfg.auto_approve ? "Auto-approve is on: commands run without asking. Deleting files, git push and other risky commands still ask." : "Ask before running commands. Turn on to auto-approve everyday commands."}
-          aria-label={cfg.auto_approve ? "Auto-approve on" : "Ask before commands"}
-          className={cx("h-8 shrink-0 rounded-lg flex items-center gap-1.5 text-[13px] no-drag disabled:opacity-40 transition-colors", cfg.auto_approve ? "px-2 bg-active text-ink" : "w-8 justify-center text-ink-2 hover:text-ink hover:bg-hover")}>
-          <ShieldCheck size={16} strokeWidth={1.6} />{cfg.auto_approve && <span>Auto</span>}</button>
         </div>
         <div className="flex-1 min-w-0 flex items-center justify-end"><ModelMenu cfg={cfg} set={setCfg} h={h} /></div>
         {busy && !canSend ? (
@@ -478,6 +421,7 @@ function RunPanel({ taskId, bare }: { taskId: string; bare?: boolean }) {
           <span className={cx("truncate", live && "chat-shimmer")}>{label}</span>
           <ChevronRight size={15} className={cx("shrink-0 transition-transform duration-200", open && "rotate-90")} />
         </button>
+        {!!t.config?.resume_count && <span className="shrink-0 rounded-full bg-hover px-2 py-0.5 text-[10px] text-ink-2" title="Atlas restarted during this run and picked it back up">Resumed</span>}
         {t.config?.access_level === "computer_use" && <span className="shrink-0 rounded-full bg-hover px-2 py-0.5 text-[10px] text-ink-2">Computer Use</span>}
         <span className="flex-1" />
         {live && <button onClick={() => run("c", () => api(`/tasks/${t.id}/cancel`, { body: {} }))} className="shrink-0 text-xs text-ink-3 hover:text-ink">Stop</button>}
@@ -679,6 +623,7 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
   }, [id, settings?.["onboarding.completed"]]);
   const [live, setLive] = useState<Record<string, string>>({});
   const msgsRef = useRef<ChatMessage[]>([]);
+  const online = useConnected();
   const [drawer, setDrawer] = useState(() => localStorage.getItem("atlas_activity") === "1");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sessionPref, setSession] = useState(() => localStorage.getItem("atlas_session") !== "0");
@@ -705,6 +650,8 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
   // streaming deltas
   useEffect(() => subscribe((m) => {
     // Coming back to a chat mid-reply: continue from the text saved so far, not from empty.
+    // reconnected: drop half-received text; the reloaded messages carry everything saved so far
+    if (m.kind === "changed" && m.entity === "*") { setLive({}); return; }
     if (m.kind === "chat_delta" && m.conversation_id === id) setLive((l) => ({ ...l, [m.message_id]: (l[m.message_id] ?? (msgsRef.current.find((x) => x.id === m.message_id)?.content || "")) + m.delta }));
   }), [id]);
 
@@ -801,6 +748,8 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
             </div>
             <div className="shrink-0 px-6 pb-5 pt-1 chat-composer-dock">
               <div className={cx("mx-auto", wide ? "max-w-[1000px]" : "max-w-[768px]")}>
+                {!online && <div role="status" className="mb-2 mx-auto w-fit flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-xs text-ink-2">
+                  <span className="working-spinner" />Reconnecting… running work keeps going and will resume</div>}
                 <Composer cfg={cfg} setCfg={setCfg} onSend={send} busy={busy} onStop={stop} />
                 <div className="mt-2.5 text-center text-[11.5px] text-ink-3">Atlas can make mistakes. Agents work on isolated branches and ask before risky commands.</div>
               </div>

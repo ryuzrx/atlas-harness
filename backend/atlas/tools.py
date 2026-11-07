@@ -190,7 +190,7 @@ async def t_apply_patch(ctx: ToolContext, patch: str) -> str:
 async def t_run_command(ctx: ToolContext, command: str, timeout_s: int = 0) -> str:
     policy = ctx.settings.get("permissions.command_policy", "ask")
     decision, reason = classify_command(command, policy, ctx.settings.get("permissions.allowlist") or [], bool(ctx.settings.get("_auto_approve")),
-                                       ctx.settings.get("permissions.always_allow") or [])
+                                       ctx.settings.get("permissions.always_allow") or [], bool(ctx.settings.get("_git_requested")))
     if decision == "deny":
         raise PermissionDenied(reason)
     if decision == "ask":
@@ -248,7 +248,8 @@ async def t_git(ctx: ToolContext, action: str, message: str = "", ref: str = "")
         return _clip(gitops.git(ctx.workspace, "show", "--stat", "--patch", ref or "HEAD", check=False))
     if action == "commit":
         branch = gitops.current_branch(ctx.workspace)
-        if not branch.startswith("atlas/"):
+        # commits ask unless the user's message asked for git work
+        if not ctx.settings.get("_git_requested"):
             ok = await ctx.request_approval("git_commit", {"branch": branch, "message": message})
             if not ok:
                 raise PermissionDenied("Commit outside an ATLAS task branch was declined.")

@@ -73,14 +73,13 @@ def test_model_with_tools_runs_as_agent_and_tool_limit_is_enforced(repo):
         prov = c.post("/api/providers", json={"kind": "scripted", "name": "Scripted"}, headers=H).json()
         proj = c.post("/api/projects", json={"path": str(repo)}, headers=H).json()
         conv = c.post("/api/conversations", json={}, headers=H).json()
-        cfg = {"mode": "model", "provider_id": prov["id"], "model": "scripted", "tools": ["read"], "project_id": proj["id"]}
+        cfg = {"mode": "model", "provider_id": prov["id"], "model": "scripted", "access_level": "read_only", "tools": ["read"], "project_id": proj["id"]}
         out = c.post(f"/api/conversations/{conv['id']}/messages", json={"content": "Fix calc.py", "config": cfg}, headers=H).json()
         assert out["assistant"]["task_id"] and out["assistant"]["status"] == "running"
         full = wait_msg(c, conv["id"], timeout=30)
         task = c.get(f"/api/tasks/{out['assistant']['task_id']}", headers=H).json()
-        assert task["config"]["tool_limit"] == ["read"]
+        assert task["config"]["tool_limit"] == ["project", "read", "write", "shell", "git", "memory", "mcp"]   # automatic: old read-only/tool picks are ignored
         assert task["agent_name"] == "Atlas Assistant"
-        assert (repo / "calc.py").read_text() == "def add(a, b):\n    return a - b\n"   # write tool was not available
         assert full["messages"][-1]["status"] == "done"
         assert "read-only" in full["messages"][-1]["content"]
         # the assistant agent is reused, not duplicated

@@ -1,5 +1,28 @@
 # Release notes
 
+## 0.5.5 — 2026-11-06
+
+### Auto-resume
+
+- If Atlas quits, crashes or restarts mid-run, agent and Work runs pick back up in the same workspace. The agent is told which steps it already took and continues from there. Each run resumes automatically at most twice, and resumed runs are marked **Resumed**.
+- Plain model replies cut off by a restart continue from the text saved so far instead of ending with "Interrupted by restart."
+- When the connection drops, a **Reconnecting…** pill appears above the composer. The chat reloads cleanly when it comes back.
+
+### Tools are automatic
+
+- The Tools menu, Read only access and the Ask first toggle are gone. Chats in a project, including Work chats, always get files, terminal, git, memory and connectors, and use them without asking.
+- Chats without a project stay plain model chats, so they stream fast. The project picker moved into the Access menu.
+- Blocked commands, such as deleting the whole disk, stay blocked. Computer Use still asks for consent.
+
+### Git is the only thing that asks
+
+- Git commands that change history or the remote (commit, push, merge, rebase, reset, tag, revert, clean, branch deletes) ask first unless your message asks for git work. Words like "commit", "push", "merge", "branch" or "PR" count as asking. Status, diff and log never ask.
+
+### Agents
+
+- Tool calls that models print as text in XML-style formats, such as DeepSeek's `<｜DSML｜ invoke>` or `<invoke name="…">`, now run as real tool calls. The markup no longer shows up as the reply.
+- Tool steps are clearer: an icon for every tool, plain-English labels, file names highlighted within their path, exit codes on failed commands, and a larger output view.
+
 ## 0.5.4 — 2026-11-06
 
 ### Multiple chats

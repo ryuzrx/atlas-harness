@@ -69,6 +69,7 @@ DEFAULT_SETTINGS = {
     "models.default_sort": "name", # name | size | context
     "general.notifications": True,
     "execution.max_concurrent_tasks": 3,
+    "execution.auto_resume": True,   # pick interrupted runs and replies back up after a restart
     "execution.max_concurrent_inference": 2,
     "execution.max_agent_steps": 40,
     "execution.command_timeout_s": 120,

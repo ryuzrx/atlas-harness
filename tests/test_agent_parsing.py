@@ -28,3 +28,17 @@ def test_edit_file_rejects_empty_old_text(tmp_path):
     r = asyncio.run(execute(ctx, "edit_file", {"path": "a.py", "old_text": "", "new_text": "y", "replace_all": True}))
     assert not r["ok"] and "must not be empty" in r["output"]
     assert (tmp_path / "a.py").read_text() == "x = 1\n"
+
+
+def test_deepseek_dsml_and_invoke_tool_calls():
+    from atlas.agent import parse_text_tool_calls, strip_tool_markup
+    dsml = ('CHECK\n<｜DSML｜ calls>\n<｜DSML｜ invoke name="run_command">\n'
+            '<｜DSML｜ parameter name="command" string="true">ls -la packages/; unzip -l x.zip | head -80</｜DSML｜ parameter>\n'
+            '<｜DSML｜ parameter name="timeout_s" string="false">60</｜DSML｜ parameter>\n'
+            '</｜DSML｜ invoke>\n</｜DSML｜ calls>')
+    calls = parse_text_tool_calls(dsml)
+    assert calls == [{"id": "text_0", "name": "run_command",
+                      "arguments": {"command": "ls -la packages/; unzip -l x.zip | head -80", "timeout_s": 60}}]
+    assert strip_tool_markup(dsml) == "CHECK"
+    plain = '<invoke name="read_file"><parameter name="path">src/a.ts</parameter></invoke>'
+    assert parse_text_tool_calls(plain)[0]["arguments"] == {"path": "src/a.ts"}
