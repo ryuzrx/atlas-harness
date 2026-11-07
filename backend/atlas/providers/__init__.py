@@ -36,6 +36,24 @@ KIND_LABELS = {
 }
 
 
+# Fallback context windows for providers that don't report one. Matched on the lowercase model
+# name, first hit wins, so specific names come first. Values are the vendors' published sizes.
+KNOWN_CONTEXT = [
+    ("gemini-1.5-pro", 2_000_000), ("gemini", 1_000_000), ("fable", 1_000_000), ("opus", 1_000_000),
+    ("sonnet", 1_000_000), ("haiku", 200_000), ("claude", 200_000), ("gpt-4.1", 1_000_000), ("gpt-5", 400_000),
+    ("gpt-4o", 128_000), ("gpt-4", 128_000), ("o1", 200_000), ("o3", 200_000), ("o4", 200_000), ("codex", 400_000),
+    ("deepseek", 128_000), ("kimi", 256_000), ("qwen3-coder", 256_000), ("qwen", 131_072), ("glm", 128_000),
+    ("llama-3.1", 128_000), ("llama-3.3", 128_000), ("llama-4", 1_000_000), ("llama", 128_000),
+    ("mistral-large", 128_000), ("mixtral", 32_768), ("mistral", 32_768), ("grok", 256_000), ("gemma", 128_000),
+    ("phi", 128_000), ("minimax", 1_000_000), ("command-r", 128_000),
+]
+
+
+def known_context(name: Optional[str]) -> Optional[int]:
+    n = (name or "").lower()
+    return next((size for key, size in KNOWN_CONTEXT if key in n), None)
+
+
 class ModelRouter:
     def __init__(self, db: DB):
         self.db = db
@@ -134,6 +152,11 @@ class ModelRouter:
             try:
                 for m in await p.list_models():
                     d = m.to_dict()
+                    if not d.get("context_length") and d.get("name"):
+                        guess = known_context(d["name"])
+                        if guess:
+                            d["context_length"] = guess
+                            d["details"] = {**(d.get("details") or {}), "context_estimated": True}
                     d["provider_name"] = p.name
                     d["provider_kind"] = p.kind
                     d["provider_preset_id"] = (p.config or {}).get("preset_id")

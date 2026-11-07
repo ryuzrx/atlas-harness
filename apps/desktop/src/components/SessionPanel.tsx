@@ -90,7 +90,8 @@ export function SessionPanel({ messages, cfg, onClose }: {
           <div className="flex justify-between"><dt className="text-ink-2">{measured ? "Last request (measured)" : "Conversation (estimated)"}</dt><dd className="tnum text-ink-2">{fmt(used)}</dd></div>
           {windowSize ? <div className="flex justify-between"><dt className="text-ink-2">Free space</dt><dd className="tnum text-ink-2">{fmt(Math.max(0, windowSize - used))}</dd></div> : null}
         </dl>
-        {!windowSize && <div className="mt-3 text-xs text-ink-3">This model doesn't report its context window.</div>}
+        {!!windowSize && model?.details?.context_estimated && <div className="mt-3 text-xs text-ink-3">Window size is Atlas's estimate; the provider doesn't report it.</div>}
+        {!windowSize && <div className="mt-3 text-xs text-ink-3">This model doesn't report its context window, and Atlas has no estimate for it.</div>}
       </Section>
 
       <Section title="Connectors">

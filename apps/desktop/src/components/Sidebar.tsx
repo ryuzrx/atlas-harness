@@ -10,7 +10,7 @@ import { loadDraft } from "../views/Chat";
 
 export { AtlasMark as Logo };
 
-export interface Conversation { id: string; title: string; updated_at: number; created_at: number; config: Record<string, any> }
+export interface Conversation { id: string; title: string; updated_at: number; created_at: number; config: Record<string, any>; busy?: number }
 
 const NAV: { id: RouteName; label: string; icon: React.ElementType; match: RouteName[] }[] = [
   { id: "agents", label: "Agents", icon: Sparkles, match: ["agents", "teams", "team"] },
@@ -72,6 +72,7 @@ function ChatItem({ c, active }: { c: Conversation; active: boolean }) {
       <button onClick={() => go({ name: "chat", id: c.id })} onDoubleClick={() => setEditing(true)}
         className="flex-1 min-w-0 flex items-center h-8 pl-2.5 pr-1 text-sm text-ink text-left no-drag">
         <span className="truncate">{c.title}</span>
+        {!!c.busy && <span className="ml-auto mr-1 shrink-0 h-1.5 w-1.5 rounded-full bg-[var(--accent)] animate-pulse" title="Working" aria-label="Working" />}
       </button>
       <span className={cx("mr-1 shrink-0", active ? "flex" : "hidden group-hover:flex group-focus-within:flex")}>
         <Menu trigger={<button aria-label={`Actions for ${c.title}`} className="h-6 w-6 flex items-center justify-center rounded-sm text-ink-2 hover:text-ink hover:bg-active no-drag"><MoreHorizontal size={14} /></button>}

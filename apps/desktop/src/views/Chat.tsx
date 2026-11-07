@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp, Square, Plus, Box, Wrench, ChevronDown, Check, X, FileText, Users, Bot, ChevronRight,
-  Copy, AlertCircle, Terminal, SlidersHorizontal, ExternalLink, Loader2, Code2, Layers, Sparkles, PanelRight, Cpu, ShieldCheck,
+  Copy, Pencil, Columns2, Volume2, AlertCircle, Terminal, SlidersHorizontal, ExternalLink, Loader2, Code2, Layers, Sparkles, PanelRight, Cpu, ShieldCheck,
 } from "lucide-react";
 import { Agent, api, Approval, Model, Project, Provider, subscribe, Task, Team, useApi } from "../api";
 import { BrandMark, brandFor } from "../components/Brand";
@@ -89,12 +89,12 @@ function Chip({ icon, label, onClick, open, disabled, title, iconBox }: {
 }) {
   return (
     <button onClick={onClick} disabled={disabled} title={title} aria-haspopup="menu" aria-expanded={open}
-      className={cx("h-8 min-w-0 shrink rounded-full flex items-center text-sm text-ink-2 hover:text-ink no-drag disabled:opacity-50",
-        iconBox ? "max-w-[250px] pl-1 pr-2.5 gap-1.5" : "max-w-[220px] px-2.5 gap-1.5",
+      aria-label={label ? undefined : title}
+      className={cx("h-8 min-w-0 shrink rounded-lg flex items-center text-[13px] text-ink-2 hover:text-ink no-drag disabled:opacity-50 transition-colors",
+        !label ? "w-8 justify-center" : iconBox ? "max-w-[220px] pl-1 pr-2 gap-1.5" : "max-w-[200px] px-2 gap-1.5",
         open ? "bg-active text-ink" : "hover:bg-hover")}>
-      <span className={cx("shrink-0 flex items-center justify-center", iconBox && "h-6 w-6 rounded-full bg-hover text-ink")}>{icon}</span>
-      <span className="truncate">{label}</span>
-      <ChevronDown size={13} className="shrink-0 text-ink-3" />
+      <span className={cx("shrink-0 flex items-center justify-center", iconBox && "h-6 w-6 rounded-md text-ink")}>{icon}</span>
+      {label && <><span className="truncate">{label}</span><ChevronDown size={12} className="shrink-0 text-ink-3" /></>}
     </button>
   );
 }
@@ -115,12 +115,12 @@ function AgentMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => v
   const mode = cfg.mode || "model";
   const agent = h.agents.find((a) => a.id === cfg.agent_id);
   const team = h.teams.find((t) => t.id === cfg.team_id);
-  const label = mode === "agent" && agent ? agent.name : mode === "team" && team ? team.name : "Agent";
+  const label = mode === "agent" && agent ? agent.name : mode === "team" && team ? team.name : "";
   const pick = (p: ChatConfig) => { set(p); setOpen(false); };
   const agents = h.agents.filter((a) => !a.config?.chat_assistant);
   return (
     <div className="relative">
-      <Chip icon={<Box size={16} strokeWidth={1.6} />} label={label} open={open} onClick={() => setOpen((o) => !o)} />
+      <Chip icon={<Box size={16} strokeWidth={1.6} />} label={label} title="Agent or team" open={open} onClick={() => setOpen((o) => !o)} />
       <Popover open={open} onClose={() => setOpen(false)} width={320}>
         <MenuRow active={mode === "model"} onClick={() => pick({ mode: "model", agent_id: undefined, team_id: undefined })} hint="Answer directly with the selected model">No agent</MenuRow>
         <MenuLabel>Agents</MenuLabel>
@@ -156,7 +156,7 @@ function ToolsMenu({ cfg, set, h, groups }: { cfg: ChatConfig; set: (p: ChatConf
   const allowedByAgent = (id: string) => mode !== "agent" || !agent || id === "project" || (agent.tools || []).includes(id);
   return (
     <div className="relative">
-      <Chip icon={<Wrench size={16} strokeWidth={1.6} />} label={tools.length ? `Tools · ${tools.length}` : "Tools"} open={open} onClick={() => setOpen((o) => !o)} />
+      <Chip icon={<Wrench size={16} strokeWidth={1.6} />} label={tools.length ? `${tools.length}` : ""} title="Tools and project" open={open} onClick={() => setOpen((o) => !o)} />
       <Popover open={open} onClose={() => setOpen(false)} width={330}>
         <MenuLabel>Project</MenuLabel>
         <div className="px-1.5 pb-1">
@@ -219,7 +219,7 @@ function AccessMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => 
     setOpen(false);
   };
   return <div className="relative">
-    <Chip icon={<SlidersHorizontal size={15} strokeWidth={1.6} />} label={level === "read_only" ? "Read only" : level === "computer_use" ? "Atlas Computer Use" : "Workspace"} open={open} onClick={() => setOpen((v) => !v)} />
+    <Chip icon={<SlidersHorizontal size={15} strokeWidth={1.6} />} label={level === "read_only" ? "Read only" : level === "computer_use" ? "Computer Use" : ""} title="Access" open={open} onClick={() => setOpen((v) => !v)} />
     <Popover open={open} onClose={() => setOpen(false)} width={300}>
       <MenuLabel>Access for this chat</MenuLabel>
       {options.map((o) => <MenuRow key={o.id} active={level === o.id} onClick={() => { set({ access_level: o.id }); setOpen(false); }} hint={o.hint}>{o.label}</MenuRow>)}
@@ -295,7 +295,6 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
     }
   };
   const submit = async () => {
-    if (busy) return;
     if (!text.trim() && !att.length) return;
     setSending(true);
     const ok = await onSend(text, att);
@@ -307,7 +306,7 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
   return (
     <div onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
       onDrop={(e) => { e.preventDefault(); setDrag(false); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); }}
-      className={cx("w-full rounded-[20px] bg-surface border border-line px-4 pt-3.5 pb-2.5 shadow-[var(--shadow-md)] transition-[box-shadow,border-color] duration-200",
+      className={cx("chat-composer w-full rounded-[24px] bg-surface border border-line px-4 pt-4 pb-3 transition-[box-shadow,border-color] duration-200",
         drag ? "ring-1 ring-[var(--ring)]" : "focus-within:border-line-strong")}>
       {att.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-2">
@@ -331,7 +330,7 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
         const images = Array.from(e.clipboardData.items).filter((item) => item.type.startsWith("image/")).map((item, i) => item.getAsFile()).filter((f): f is File => !!f).map((f, i) => new File([f], f.name || `pasted-image-${Date.now()}-${i}.${f.type.split("/")[1] || "png"}`, { type: f.type }));
         if (images.length) { e.preventDefault(); void addFiles(images); }
       }} rows={1} aria-label="Message Atlas" spellCheck={appSettings?.["chat.spellcheck"] !== false}
-        placeholder="Message Atlas..."
+        placeholder={busy ? "Send a message to redirect Atlas…" : "How can I help you today?"}
         onKeyDown={(e) => {
           if (matches.length) {
             if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); setPick((p) => (p + (e.key === "ArrowDown" ? 1 : matches.length - 1)) % matches.length); return; }
@@ -342,26 +341,27 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
           const modSends = settings?.["chat.send_key"] === "mod_enter";
           if (modSends ? (e.metaKey || e.ctrlKey) : !(e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); }
         }}
-        className={cx("composer-input w-full resize-none bg-transparent outline-none text-lg leading-6 text-ink placeholder:text-ink-3", big ? "min-h-[48px]" : "min-h-[28px]")} />
-      <div className="flex items-end gap-1 mt-2 -mx-1.5">
-        <div className="flex-1 min-w-0 flex flex-wrap items-center gap-x-1 gap-y-1">
+        className={cx("composer-input w-full resize-none bg-transparent outline-none text-[16px] leading-[1.6] text-ink placeholder:text-ink-3 px-1", big ? "min-h-[48px]" : "min-h-[28px]")} />
+      <div className="flex items-center gap-1.5 mt-2 -mx-1.5">
+        <div className="shrink-0 flex items-center gap-0.5">
         <input ref={file} type="file" multiple hidden onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
         <button onClick={() => file.current?.click()} aria-label="Attach files" title="Attach text files or images"
-          className="h-8 w-8 rounded-full flex items-center justify-center text-ink-2 hover:text-ink hover:bg-hover shrink-0"><Plus size={18} strokeWidth={1.6} /></button>
+          className="h-8 w-8 rounded-lg flex items-center justify-center text-ink-2 hover:text-ink hover:bg-hover shrink-0"><Plus size={18} strokeWidth={1.6} /></button>
         <AgentMenu cfg={cfg} set={setCfg} h={h} />
-        <ModelMenu cfg={cfg} set={setCfg} h={h} />
         <AccessMenu cfg={cfg} set={setCfg} h={h} />
         <ToolsMenu cfg={cfg} set={setCfg} h={h} groups={meta?.permission_groups || {}} />
         <button onClick={() => setCfg({ auto_approve: !cfg.auto_approve })} aria-pressed={!!cfg.auto_approve} disabled={cfg.access_level === "read_only"}
           title={cfg.auto_approve ? "Auto-approve is on: commands run without asking. Deleting files, git push and other risky commands still ask." : "Ask before running commands. Turn on to auto-approve everyday commands."}
-          className={cx("h-8 shrink-0 rounded-full flex items-center gap-1.5 px-2.5 text-sm no-drag disabled:opacity-40", cfg.auto_approve ? "bg-active text-ink" : "text-ink-2 hover:text-ink hover:bg-hover")}>
-          <ShieldCheck size={15} strokeWidth={1.6} /><span>{cfg.auto_approve ? "Auto-approve" : "Ask first"}</span></button>
+          aria-label={cfg.auto_approve ? "Auto-approve on" : "Ask before commands"}
+          className={cx("h-8 shrink-0 rounded-lg flex items-center gap-1.5 text-[13px] no-drag disabled:opacity-40 transition-colors", cfg.auto_approve ? "px-2 bg-active text-ink" : "w-8 justify-center text-ink-2 hover:text-ink hover:bg-hover")}>
+          <ShieldCheck size={16} strokeWidth={1.6} />{cfg.auto_approve && <span>Auto</span>}</button>
         </div>
-        {busy ? (
+        <div className="flex-1 min-w-0 flex items-center justify-end"><ModelMenu cfg={cfg} set={setCfg} h={h} /></div>
+        {busy && !canSend ? (
           <button onClick={onStop} aria-label="Stop" title="Stop  ⌘."
             className="h-8 w-8 rounded-full bg-ink text-[var(--base)] flex items-center justify-center hover:opacity-90 shrink-0"><Square size={13} fill="currentColor" /></button>
         ) : (
-          <button onClick={submit} disabled={!canSend} aria-label="Send message" title={settings?.["chat.send_key"] === "mod_enter" ? "Send  ⌘↵" : "Send  ↵"}
+          <button onClick={submit} disabled={!canSend} aria-label="Send message" title={busy ? "Stop the current run and send this" : settings?.["chat.send_key"] === "mod_enter" ? "Send  ⌘↵" : "Send  ↵"}
             className="h-8 w-8 rounded-full bg-ink text-[var(--base)] flex items-center justify-center hover:opacity-90 disabled:opacity-30 disabled:cursor-default shrink-0">
             {sending ? <Loader2 size={16} className="animate-spin" /> : <ArrowUp size={18} strokeWidth={2} />}</button>
         )}
@@ -435,111 +435,159 @@ function SubRun({ t }: { t: Task }) {
   );
 }
 
-function RunPanel({ taskId }: { taskId: string }) {
+function RunPanel({ taskId, bare }: { taskId: string; bare?: boolean }) {
   const { go, select } = useStore();
   const { data: t } = useApi<Task>(`/tasks/${taskId}`, ["task", "approval"]);
   const { data: approvals = [] } = useApi<Approval[]>("/approvals", ["approval", "task"]);
-  const [open, setOpen] = useState(false);
-  const [seen, setSeen] = useState(false);
-  useEffect(() => { if (open) setSeen(true); }, [open]);
+  const [open, setOpen] = useState(true);
+  const [raw, setRaw] = useState(false);
+  const [now, setNow] = useState(Date.now() / 1000);
   const { run } = useAction();
   const { steps } = useRunSteps(t && t.kind !== "objective" ? taskId : undefined);
-  if (!t) return <div className="h-11 rounded-lg border border-line bg-surface animate-pulse" />;
+  const live = !!t && !["completed", "failed", "cancelled"].includes(t.status);
+  useEffect(() => { if (!live) return; const i = setInterval(() => setNow(Date.now() / 1000), 1000); return () => clearInterval(i); }, [live]);
+  if (!t) return <div className="h-7 w-40 rounded-md bg-hover animate-pulse" />;
   const ids = new Set([t.id, ...(t.children || []).map((c) => c.id)]);
   const pending = approvals.filter((a) => ids.has(a.task_id));
-  const live = !["completed", "failed", "cancelled"].includes(t.status);
   const isTeam = t.kind === "objective";
   const kids = t.children || [];
   const done = kids.filter((k) => k.status === "completed").length;
-  return (
-    <div className="rounded-xl border border-line bg-surface overflow-hidden">
-      <div className="flex items-center gap-2.5 pl-3 pr-2 h-11">
-        <button onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex-1 min-w-0 flex items-center gap-2.5 text-left">
-          <ChevronRight size={14} className={cx("text-ink-3 transition-transform duration-150 shrink-0", open && "rotate-90")} />
-          {isTeam ? <Users size={15} strokeWidth={1.6} className="text-ink-2 shrink-0" /> : <Bot size={15} strokeWidth={1.6} className="text-ink-2 shrink-0" />}
-          <span className="text-sm text-ink font-medium shrink-0">{isTeam ? t.team_name || "Team" : t.agent_name || "Agent"}</span>
-          <span className="text-sm text-ink-2 truncate">{isTeam && kids.length ? `${done}/${kids.length} tasks` : !isTeam && !live && steps.length ? summarizeSteps(steps) : t.title}</span>
-          {t.config?.access_level === "computer_use" && <span className="shrink-0 rounded-full bg-hover px-2 py-0.5 text-[10px] text-ink-2">Atlas Computer Use</span>}
-          {live && <AnimatedMark size={16} play="shimmer" className="shrink-0" />}
-        </button>
-        <StatusBadge status={t.status} />
-        {live && <button onClick={() => run("c", () => api(`/tasks/${t.id}/cancel`, { body: {} }))} title="Stop this run"
-          className="h-7 px-2 rounded-md text-xs text-ink-2 hover:text-ink hover:bg-hover">Stop</button>}
-        <button onClick={() => { go({ name: "tasks" }); setTimeout(() => select({ kind: "task", id: t.id }), 0); }} aria-label="Open in Runs" title="Open in Runs"
-          className="h-7 w-7 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-hover"><ExternalLink size={13} /></button>
-      </div>
-      {pending.length > 0 && <div className="px-3 pb-3 space-y-2">{pending.map((a) => <ApprovalCard key={a.id} a={a} />)}</div>}
-      {t.error && !open && <div className="px-3 pb-3 -mt-1 text-xs text-bad truncate">{t.error}</div>}
-      {!isTeam && live && !open && <div className="border-t border-line"><RunTimeline taskId={t.id} live /></div>}
-      {!isTeam && open && <div className="border-t border-line"><RunTimeline taskId={t.id} live={live} /></div>}
+  const who = isTeam ? t.team_name || "Team" : t.agent_name || "Agent";
+  const started = (t as any).started_at || (t as any).created_at || now;
+  const label = live
+    ? <>{pending.length ? "Waiting for you" : isTeam && kids.length ? `Working · ${done}/${kids.length} tasks` : "Working"} <span className="tnum opacity-70">{fmtDur(now - started)}</span></>
+    : <>{who} · {isTeam && kids.length ? `${done}/${kids.length} tasks` : steps.length ? summarizeSteps(steps) : t.status}</>;
+  const body = (
+    <div className="space-y-3">
+      {isTeam
+        ? (kids.length ? <div className="rounded-xl border border-line overflow-hidden">{kids.map((k) => <SubRun key={k.id} t={k} />)}</div>
+          : <div className="text-[14px] text-ink-3">{t.status === "planning" ? "The lead is planning the work…" : "No tasks yet."}</div>)
+        : <div className="-ml-2"><RunTimeline taskId={t.id} live={live} /></div>}
       <RunMedia taskId={t.id} live={live} />
-      <div className={cx("disclose", open && "open")}><div>{(open || seen) && (
-        <div className="border-t border-line">
-          {isTeam ? (
-            kids.length ? kids.map((k) => <SubRun key={k.id} t={k} />) :
-              <div className="px-3 py-3 text-sm text-ink-3">{t.status === "planning" ? "The lead is planning the work…" : "No tasks yet."}</div>
-          ) : (
-            <div className="p-3"><div className="mb-1.5 text-xs text-ink-3">Raw log</div><div className="rounded-md border border-line overflow-hidden"><ExecutionViewer taskId={t.id} height={300} showFilters={false} /></div></div>
-          )}
-        </div>
-      )}</div></div>
+      {t.error && <div className="text-[13px] text-bad">{t.error}</div>}
+      {!isTeam && <button onClick={() => setRaw((v) => !v)} className="text-xs text-ink-3 hover:text-ink">{raw ? "Hide raw log" : "Show raw log"}</button>}
+      {raw && <div className="rounded-xl border border-line overflow-hidden"><ExecutionViewer taskId={t.id} height={300} showFilters={false} /></div>}
+    </div>
+  );
+  if (bare) return <div className="space-y-3">{pending.length > 0 && pending.map((a) => <ApprovalCard key={a.id} a={a} />)}{body}</div>;
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3 min-w-0">
+        <button onClick={() => setOpen((o) => !o)} aria-expanded={open} className="chat-disclosure-head min-w-0">
+          {live && <AnimatedMark size={18} play="shimmer" />}
+          <span className={cx("truncate", live && "chat-shimmer")}>{label}</span>
+          <ChevronRight size={15} className={cx("shrink-0 transition-transform duration-200", open && "rotate-90")} />
+        </button>
+        {t.config?.access_level === "computer_use" && <span className="shrink-0 rounded-full bg-hover px-2 py-0.5 text-[10px] text-ink-2">Computer Use</span>}
+        <span className="flex-1" />
+        {live && <button onClick={() => run("c", () => api(`/tasks/${t.id}/cancel`, { body: {} }))} className="shrink-0 text-xs text-ink-3 hover:text-ink">Stop</button>}
+        <button onClick={() => { go({ name: "tasks" }); setTimeout(() => select({ kind: "task", id: t.id }), 0); }} title="Open in Runs" aria-label="Open in Runs"
+          className="shrink-0 h-7 w-7 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-hover"><ExternalLink size={13} /></button>
+      </div>
+      {pending.length > 0 && <div className="space-y-2">{pending.map((a) => <ApprovalCard key={a.id} a={a} />)}</div>}
+      <div className={cx("disclose", open && "open")}><div>{open && <div className="chat-disclosure-body">{body}</div>}</div></div>
     </div>
   );
 }
 
 // ---------------------------------------------------------------- messages
-function MessageView({ m, live, providers }: { m: ChatMessage; live?: string; providers: Provider[] }) {
+const fmtDur = (s: number) => { const n = Math.max(0, Math.round(s)); return n < 60 ? `${n}s` : `${Math.floor(n / 60)}m ${n % 60}s`; };
+const fmtTime = (t: number) => new Date(t * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const elapsed = (m: ChatMessage) => (m.data?.finished_at ? m.data.finished_at - m.created_at : 0);
+
+function useCopy(): [boolean, (t: string) => void] {
   const [copied, setCopied] = useState(false);
-  if (m.role === "user") {
-    const files: { name: string }[] = m.data?.attachments || [];
-    return (
-      <div className="flex justify-end anim-rise">
-        <div className="max-w-[78%] rounded-[20px] bg-[var(--accent-bg)] px-4 py-2.5">
-          {files.length > 0 && <div className="flex flex-wrap gap-1.5 mb-1.5">{files.map((f) => (
-            <span key={f.name} className="h-6 px-2 rounded-sm bg-active text-xs text-ink-2 flex items-center gap-1"><FileText size={12} />{f.name}</span>))}</div>}
-          <div className="selectable text-base leading-6 text-ink whitespace-pre-wrap break-words">{m.content}</div>
-        </div>
+  return [copied, (t: string) => { navigator.clipboard?.writeText(t); setCopied(true); setTimeout(() => setCopied(false), 1400); }];
+}
+
+function IconBtn({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+  return <button onClick={onClick} aria-label={label} title={label}
+    className="h-8 w-8 rounded-lg flex items-center justify-center text-ink-3 hover:text-ink hover:bg-hover transition-colors">{children}</button>;
+}
+
+/** Claude-style disclosure: a quiet line of text with a chevron, content tucked under a left rule. */
+function Disclosure({ label, live, open, onToggle, children }: {
+  label: React.ReactNode; live?: boolean; open: boolean; onToggle: () => void; children?: React.ReactNode;
+}) {
+  return (
+    <div className="chat-disclosure">
+      <button onClick={onToggle} aria-expanded={open} className="chat-disclosure-head">
+        {live && <AnimatedMark size={18} play="shimmer" />}
+        <span className={cx(live && "chat-shimmer")}>{label}</span>
+        <ChevronRight size={15} className={cx("transition-transform duration-200", open && "rotate-90")} />
+      </button>
+      <div className={cx("disclose", open && "open")}><div>{children && <div className="chat-disclosure-body">{children}</div>}</div></div>
+    </div>
+  );
+}
+
+function Thinking({ since }: { since: number }) {
+  const [open, setOpen] = useState(true);
+  const [now, setNow] = useState(Date.now() / 1000);
+  useEffect(() => { const i = setInterval(() => setNow(Date.now() / 1000), 1000); return () => clearInterval(i); }, []);
+  return (
+    <div role="status">
+      <Disclosure live open={open} onToggle={() => setOpen((o) => !o)} label={<>Thinking <span className="tnum opacity-70">{fmtDur(now - since)}</span></>}>
+        <div className="text-[14px] text-ink-3">Waiting for the model to start answering…</div>
+      </Disclosure>
+    </div>
+  );
+}
+
+function UserMessage({ m, onEdit }: { m: ChatMessage; onEdit?: (text: string) => void }) {
+  const [copied, copy] = useCopy();
+  const files: { name: string; type?: string; content?: string }[] = m.data?.attachments || [];
+  return (
+    <div className="group flex flex-col items-end anim-rise">
+      {files.length > 0 && <div className="flex flex-wrap justify-end gap-2 mb-2 max-w-[80%]">{files.map((f) =>
+        f.type?.startsWith("image/") && f.content
+          ? <img key={f.name} src={`data:${f.type};base64,${f.content}`} alt={f.name} className="h-28 max-w-[220px] rounded-xl object-cover border border-line" />
+          : <span key={f.name} className="h-9 px-3 rounded-xl border border-line bg-surface text-sm text-ink-2 flex items-center gap-2"><FileText size={14} />{f.name}</span>)}</div>}
+      {m.content && <div className="chat-user-bubble selectable">{m.content}</div>}
+      <div className="mt-1 flex items-center gap-0.5 text-xs text-ink-3 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        <span className="tnum px-2">{fmtTime(m.created_at)}</span>
+        <IconBtn label={copied ? "Copied" : "Copy"} onClick={() => copy(m.content)}>{copied ? <Check size={15} /> : <Copy size={15} />}</IconBtn>
+        {onEdit && <IconBtn label="Edit" onClick={() => onEdit(m.content)}><Pencil size={15} /></IconBtn>}
       </div>
-    );
-  }
+    </div>
+  );
+}
+
+function MessageView({ m, live, providers, onEdit, last }: { m: ChatMessage; live?: string; providers: Provider[]; onEdit?: (text: string) => void; last?: boolean }) {
+  const [copied, copy] = useCopy();
+  const [worked, setWorked] = useState(false);
+  if (m.role === "user") return <UserMessage m={m} onEdit={onEdit} />;
   const streaming = m.status === "streaming";
   const text = streaming && live && live.length >= m.content.length ? live : m.content;
   const waiting = (streaming && !text) || (m.status === "running" && !m.content);
+  const busy = streaming || m.status === "running";
   const modelProvider = m.data?.provider_id ? providers.find((p) => p.id === m.data.provider_id) : undefined;
-  const modelIcon = resolveProviderIconKey({
-    presetId: modelProvider?.config?.preset_id,
-    kind: modelProvider?.kind,
-    baseUrl: modelProvider?.base_url,
-    name: modelProvider?.name,
-  });
+  const modelIcon = resolveProviderIconKey({ presetId: modelProvider?.config?.preset_id, kind: modelProvider?.kind, baseUrl: modelProvider?.base_url, name: modelProvider?.name });
+  const finishedRun = m.task_id && (m.status === "done" || m.status === "error" || (m.status === "stopped" && !m.data?.interrupted));
   return (
-    <div className="group flex gap-3.5 anim-rise">
-      <div className="h-7 w-7 shrink-0 rounded-md border border-line flex items-center justify-center text-ink mt-0.5">
-        {streaming || m.status === "running" ? <AnimatedMark size={15} play="shimmer" /> : <AtlasMark size={15} />}</div>
-      <div className="min-w-0 flex-1 space-y-3">
-        {m.data?.mode === "model" && m.data?.model && (
-          <div className="chat-model-attribution">
-            <BrandMark model={m.data.model} fallbackIconKey={modelIcon} label={modelProvider?.name} size={24} />
-            <div className="min-w-0 flex-1">
-              <div className="chat-model-name" title={m.data.model}>{m.data.model}</div>
-              {modelProvider?.name && <div className="chat-model-provider">{modelProvider.name}</div>}
-            </div>
-            {m.status === "stopped" && <span className="chat-model-status">Stopped</span>}
-          </div>
-        )}
-        {m.task_id && <RunPanel taskId={m.task_id} />}
-        {waiting && !m.task_id && <div className="h-6 flex items-center gap-2 text-sm text-ink-3" role="status"><AnimatedMark size={22} play="shimmer" /><span className="am-thinking">Thinking…</span></div>}
-        {text && <div className={cx(streaming && "caret")}><Markdown text={text} /></div>}
-        {m.status === "error" && m.data?.error && (
-          <div className="flex items-start gap-2 text-sm text-bad"><AlertCircle size={15} className="mt-0.5 shrink-0" /><span className="selectable">{m.data.error}</span></div>)}
-        {!streaming && m.status !== "running" && text && (
-          <div className="h-7 -ml-1.5 flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-            <button onClick={() => { navigator.clipboard?.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1200); }} aria-label="Copy reply"
-              className="h-7 px-1.5 rounded-sm flex items-center gap-1 text-xs text-ink-3 hover:text-ink hover:bg-hover">{copied ? <Check size={13} /> : <Copy size={13} />}{copied ? "Copied" : "Copy"}</button>
-            {m.data?.usage?.completion_tokens != null && <span className="ml-2 text-xs text-ink-3 tnum">{m.data.usage.completion_tokens} tokens · {(m.data.latency_ms / 1000).toFixed(1)} s</span>}
-          </div>
-        )}
-      </div>
+    <div className="group anim-rise flex flex-col gap-4">
+      {m.status === "stopped" && m.data?.interrupted && <div className="chat-note">You stopped after {fmtDur(elapsed(m))}</div>}
+      {waiting && !m.task_id && <Thinking since={m.created_at} />}
+      {m.task_id && (finishedRun
+        ? <Disclosure open={worked} onToggle={() => setWorked((o) => !o)} label={`Worked for ${fmtDur(elapsed(m))}`}>{worked && <RunPanel taskId={m.task_id} bare />}</Disclosure>
+        : <RunPanel taskId={m.task_id} />)}
+      {text && <div className={cx("chat-reply", streaming && "caret")}><Markdown text={text} /></div>}
+      {m.data?.error && (
+        <div className="flex items-start gap-2.5 rounded-xl border border-[var(--error)]/30 bg-[var(--error-bg)] px-3.5 py-3 text-sm text-bad">
+          <AlertCircle size={16} className="mt-0.5 shrink-0" /><span className="selectable">{m.data.error}</span></div>)}
+      {!busy && text && (
+        <div className={cx("-ml-2 flex items-center gap-0.5 transition-opacity", last ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100")}>
+          <IconBtn label={copied ? "Copied" : "Copy"} onClick={() => copy(text)}>{copied ? <Check size={15} /> : <Copy size={15} />}</IconBtn>
+          {"speechSynthesis" in window && <IconBtn label="Read aloud" onClick={() => { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(text)); }}><Volume2 size={15} /></IconBtn>}
+          {m.data?.mode === "model" && m.data?.model && (
+            <span className="ml-2 flex items-center gap-2 text-xs text-ink-3 min-w-0" title={modelProvider?.name}>
+              <BrandMark model={m.data.model} fallbackIconKey={modelIcon} label={modelProvider?.name} size={16} />
+              <span className="truncate">{m.data.model}</span>
+              {m.data?.usage?.completion_tokens != null && <span className="tnum shrink-0">· {m.data.usage.completion_tokens} tokens · {(m.data.latency_ms / 1000).toFixed(1)}s</span>}
+              {m.status === "stopped" && <span className="shrink-0">· Stopped</span>}
+            </span>)}
+        </div>
+      )}
     </div>
   );
 }
@@ -583,28 +631,58 @@ function ActivityDrawer({ onClose }: { onClose: () => void }) {
 }
 
 // ---------------------------------------------------------------- the view
+// Extra chats shown beside the main one. Each pane is its own conversation with its own model,
+// and every pane can be running at the same time.
+const PANES_KEY = "atlas_chat_panes";
+const loadPanes = (): (string | null)[] => { try { const v = JSON.parse(localStorage.getItem(PANES_KEY) || "[]"); return Array.isArray(v) ? v.slice(0, 3) : []; } catch { return []; } };
+const MAX_PANES = 3;
+
 export function Chat() {
   const { route } = useStore();
-  return <ChatInner key={route.id || "new"} id={route.id} />;
+  const [panes, setPanesState] = useState<(string | null)[]>(loadPanes);
+  const setPanes = (next: (string | null)[]) => { setPanesState(next); try { localStorage.setItem(PANES_KEY, JSON.stringify(next)); } catch {} };
+  const addPane = () => { if (panes.length < MAX_PANES) setPanes([...panes, null]); };
+  const split = panes.length > 0;
+  return (
+    <div className="flex-1 min-w-0 h-full flex">
+      <ChatInner key={route.id || "new"} id={route.id} split={split} canSplit={panes.length < MAX_PANES} onSplit={addPane} />
+      {panes.map((pid, i) => (
+        <div key={i} className="flex-1 min-w-0 h-full flex border-l border-line">
+          <ChatInner key={pid || `new-${i}`} id={pid || undefined} split pane
+            canSplit={panes.length < MAX_PANES} onSplit={addPane}
+            onOpen={(cid) => setPanes(panes.map((x, j) => (j === i ? cid : x)))}
+            onClose={() => setPanes(panes.filter((_, j) => j !== i))} />
+        </div>
+      ))}
+    </div>
+  );
 }
 
-function ChatInner({ id }: { id?: string }) {
-  const { go, settings } = useStore();
+function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
+  id?: string; split?: boolean; pane?: boolean; canSplit?: boolean; onSplit?: () => void;
+  onOpen?: (id: string) => void; onClose?: () => void;
+}) {
+  const { go: goRoute, settings } = useStore();
+  // a side pane keeps its own conversation instead of changing the app's route
+  const go = (r: { name: string; id?: string }) => (pane && r.name === "chat" ? (r.id ? onOpen?.(r.id) : onClose?.()) : goRoute(r as any));
   const { providers: chatProviders } = useHarnessData();
   const wide = settings?.["chat.width"] === "wide";
   const toast = useToast();
   const { data: loadedConv, error, setData } = useApi<ConversationFull>(id ? `/conversations/${id}` : null, ["conversation"]);
   // useApi keeps the previous chat's data until the new one arrives; never show chat A under chat B's id.
   const conv = loadedConv && loadedConv.id === id ? loadedConv : undefined;
-  const [draft, setDraft] = useState<ChatConfig>(loadDraft);
+  const [draft, setDraftState] = useState<ChatConfig>(loadDraft);
+  const setDraft = (c: ChatConfig) => setDraftState(c);
   // Chat is mounted behind Welcome; pick up the model chosen there when setup finishes.
   useEffect(() => {
     if (!id && settings?.["onboarding.completed"]) setDraft(loadDraft());
   }, [id, settings?.["onboarding.completed"]]);
   const [live, setLive] = useState<Record<string, string>>({});
+  const msgsRef = useRef<ChatMessage[]>([]);
   const [drawer, setDrawer] = useState(() => localStorage.getItem("atlas_activity") === "1");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [session, setSession] = useState(() => localStorage.getItem("atlas_session") !== "0");
+  const [sessionPref, setSession] = useState(() => localStorage.getItem("atlas_session") !== "0");
+  const session = sessionPref && !split;
   const toggleSession = () => setSession((v) => { localStorage.setItem("atlas_session", v ? "0" : "1"); return !v; });
   const [seed, setSeed] = useState<{ text: string; n: number } | undefined>();
   const scroller = useRef<HTMLDivElement>(null);
@@ -618,16 +696,18 @@ function ChatInner({ id }: { id?: string }) {
       next.access_level = "workspace";
       next.computer_consent_for = undefined;
     }
-    setDraft(next); saveDraft(next);
+    setDraft(next); if (!pane) saveDraft(next);
     if (id && conv) { setData({ ...conv, config: next }); api(`/conversations/${id}`, { method: "PATCH", body: { config: next } }).catch(() => {}); }
   };
 
   // streaming deltas
   useEffect(() => subscribe((m) => {
-    if (m.kind === "chat_delta" && m.conversation_id === id) setLive((l) => ({ ...l, [m.message_id]: (l[m.message_id] || "") + m.delta }));
+    // Coming back to a chat mid-reply: continue from the text saved so far, not from empty.
+    if (m.kind === "chat_delta" && m.conversation_id === id) setLive((l) => ({ ...l, [m.message_id]: (l[m.message_id] ?? (msgsRef.current.find((x) => x.id === m.message_id)?.content || "")) + m.delta }));
   }), [id]);
 
   const messages = conv?.messages || [];
+  msgsRef.current = messages;
   const busy = messages.some((m) => m.status === "streaming" || m.status === "running");
   const liveLen = Object.values(live).reduce((a, s) => a + s.length, 0);
 
@@ -636,7 +716,7 @@ function ChatInner({ id }: { id?: string }) {
   const onScroll = () => { const el = scroller.current; if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; };
 
   useEffect(() => {
-    const h = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key === ".") { e.preventDefault(); stop(); } };
+    const h = (e: KeyboardEvent) => { if (!pane && (e.metaKey || e.ctrlKey) && e.key === ".") { e.preventDefault(); stop(); } };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   });
@@ -667,11 +747,15 @@ function ChatInner({ id }: { id?: string }) {
       <div className="relative flex-1 min-w-0 h-full flex flex-col">
         <header className={cx("drag absolute top-0 inset-x-0 h-[64px] z-10 flex items-center justify-end gap-3 px-6 pt-2", !empty && "bg-[var(--base)]")}>
           {id && conv && !empty && <div className="absolute left-6 top-[22px] text-sm text-ink-2 truncate max-w-[50%]">{conv.title}</div>}
-          {!empty && <button onClick={toggleSession} aria-label="Session details" title="Session details" aria-pressed={session}
+          {canSplit && <button onClick={onSplit} aria-label="Open another chat side by side" title="New chat side by side"
+            className="no-drag h-8 w-8 rounded-md flex items-center justify-center text-ink-2 hover:text-ink hover:bg-hover"><Columns2 size={18} strokeWidth={1.6} /></button>}
+          {pane && <button onClick={onClose} aria-label="Close this chat pane" title="Close pane"
+            className="no-drag h-8 w-8 rounded-md flex items-center justify-center text-ink-2 hover:text-ink hover:bg-hover"><X size={18} strokeWidth={1.6} /></button>}
+          {!empty && !split && <button onClick={toggleSession} aria-label="Session details" title="Session details" aria-pressed={session}
             className={cx("no-drag h-8 w-8 rounded-md flex items-center justify-center", session ? "bg-active text-ink" : "text-ink-2 hover:text-ink hover:bg-hover")}><PanelRight size={18} strokeWidth={1.6} /></button>}
-          <button onClick={toggleDrawer} aria-label="Live activity" title="Live activity" aria-pressed={drawer}
+          {!pane && <button onClick={toggleDrawer} aria-label="Live activity" title="Live activity" aria-pressed={drawer}
             className={cx("no-drag h-8 w-8 rounded-md flex items-center justify-center", drawer ? "bg-active text-ink" : "text-ink-2 hover:text-ink hover:bg-hover")}>
-            <Terminal size={18} strokeWidth={1.6} /></button>
+            <Terminal size={18} strokeWidth={1.6} /></button>}
           <div className="relative">
             <button onClick={() => setSettingsOpen((o) => !o)} aria-label="Chat settings" title="Chat settings" aria-expanded={settingsOpen}
               className={cx("no-drag h-8 w-8 rounded-md flex items-center justify-center", settingsOpen ? "bg-active text-ink" : "text-ink-2 hover:text-ink hover:bg-hover")}>
@@ -689,41 +773,41 @@ function ChatInner({ id }: { id?: string }) {
           <div className="flex-1" aria-busy="true" />
         ) : empty ? (
           <div className="relative flex-1 overflow-y-auto">
-            <Starfield />
+            {!split && <Starfield />}
             <div className="stagger relative min-h-full flex flex-col items-center justify-center px-8 pb-[8vh]">
               <AtlasMark size={40} className="text-ink" />
-              <h1 className="mt-5 text-2xl font-semibold text-ink">How can I help you today?</h1>
+              <h1 className={cx("chat-greeting mt-5 text-ink", split && "!text-[26px]")}>{pane ? "Pick a model and ask" : "What should we work on?"}</h1>
               <div className="mt-8 w-full max-w-[760px]">
                 <Composer cfg={cfg} setCfg={setCfg} onSend={send} busy={false} onStop={stop} big seed={seed} />
               </div>
-              <div className="mt-4 w-full max-w-[760px] flex flex-wrap justify-center gap-2">
+              {!split && <div className="mt-4 w-full max-w-[760px] flex flex-wrap justify-center gap-2">
                 {STARTERS.map(({ icon: Icon, label, text }) => (
                   <button key={label} onClick={() => setSeed({ text, n: Date.now() })}
                     className="h-8 px-3 rounded-full border border-line text-sm text-ink-2 hover:text-ink hover:bg-hover flex items-center gap-1.5">
                     <Icon size={14} strokeWidth={1.7} />{label}
                   </button>))}
-              </div>
+              </div>}
             </div>
           </div>
         ) : (
           <>
             <div ref={scroller} onScroll={onScroll} className="flex-1 overflow-y-auto">
-              <div className={cx("mx-auto px-8 pt-[84px] pb-8 space-y-7", wide ? "max-w-[1080px]" : "max-w-[820px]")}>
+              <div className={cx("mx-auto px-6 pt-[88px] pb-16 flex flex-col gap-9", wide ? "max-w-[1000px]" : "max-w-[768px]")}>
                 {!conv && <div className="flex justify-center py-16"><Loader2 size={18} className="animate-spin text-ink-3" /></div>}
-                {messages.map((m) => <MessageView key={m.id} m={m} live={live[m.id]} providers={chatProviders} />)}
+                {messages.map((m, i) => <MessageView key={m.id} m={m} live={live[m.id]} providers={chatProviders} last={i === messages.length - 1} onEdit={(t) => setSeed({ text: t, n: Date.now() })} />)}
               </div>
             </div>
-            <div className="shrink-0 px-8 pb-6 pt-2">
-              <div className={cx("mx-auto", wide ? "max-w-[1120px]" : "max-w-[860px]")}>
+            <div className="shrink-0 px-6 pb-5 pt-1 chat-composer-dock">
+              <div className={cx("mx-auto", wide ? "max-w-[1000px]" : "max-w-[768px]")}>
                 <Composer cfg={cfg} setCfg={setCfg} onSend={send} busy={busy} onStop={stop} />
-                <div className="mt-2 text-center text-xs text-ink-3">Atlas runs on your Mac. Agents work on isolated branches and ask before risky commands.</div>
+                <div className="mt-2.5 text-center text-[11.5px] text-ink-3">Atlas can make mistakes. Agents work on isolated branches and ask before risky commands.</div>
               </div>
             </div>
           </>
         )}
       </div>
       {session && !empty && !notFound && <SessionPanel messages={messages} cfg={cfg} onClose={toggleSession} />}
-      {drawer && <ActivityDrawer onClose={toggleDrawer} />}
+      {drawer && !split && <ActivityDrawer onClose={toggleDrawer} />}
     </div>
   );
 }

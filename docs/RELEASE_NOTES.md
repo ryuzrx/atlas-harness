@@ -1,5 +1,29 @@
 # Release notes
 
+## 0.5.3 — 2026-11-06
+
+### Chat
+
+- Redesigned chat. Replies read as full-width serif text with no header block, your messages sit in a grey bubble, and the copy, read-aloud and model details sit in a quiet row under each reply.
+- While a model is working you see a "Thinking" or "Working" line with a live timer that drops open to show each step. Finished runs fold into "Worked for 38s".
+- Send a message while Atlas is working to stop the current reply and redirect it. The stopped reply is marked "You stopped after 5s".
+- Errors show in a red box, including on replies you stopped.
+- The composer is smaller: Agent, Access, Tools and Ask first are icon buttons that only show a label when changed, and the model picker sits beside the send button.
+
+### Multiple chats
+
+- Several chats can run at once, including Work chats that use the same model. The sidebar marks every chat that is still working.
+- Open up to four chats side by side with the new split button, each with its own model.
+- Switching away from a chat mid-reply and coming back no longer freezes the reply.
+
+### Models
+
+- Models that don't report a context window now get a known size from their name, so the context meter works for most cloud models. Estimates are labeled.
+
+### Dynamic Island
+
+- Redesigned Ask Atlas panel: quick-start chips, a larger multi-line input, a chat-style reply, animated thinking dots, a model status pill and a close button.
+
 ## 0.5.2 — 2026-11-06
 
 ### Getting started

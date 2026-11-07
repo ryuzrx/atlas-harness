@@ -60,12 +60,12 @@ export function ChatModelPicker({ cfg, set, models, providers, agents, loading }
     if (!group.models.some((m) => m.name === model.name)) group.models.push(model);
   }
   const runtimes = providers.filter((p) => p.enabled && cli(p.kind));
-  return <div ref={root} className="relative">
+  return <div ref={root} className="relative min-w-0">
     <button ref={trigger} disabled={locked} onClick={() => setOpen((v) => !v)} aria-label={`Choose model: ${label}`} aria-haspopup="dialog" aria-expanded={open}
       title={locked ? "This agent or team manages its own models." : label}
-      className={cx("h-8 max-w-[260px] rounded-full flex items-center gap-2 pl-1 pr-2.5 text-sm text-ink-2 hover:text-ink disabled:opacity-50 no-drag", open ? "bg-active" : "hover:bg-hover")}>
-      {cfg.model ? <BrandMark model={cfg.model} fallbackIconKey={iconFor(provider, selected)} size={24} /> : <span className="h-6 w-6 flex items-center justify-center"><Cpu size={16} /></span>}
-      <span className="truncate font-medium">{label}</span><ChevronDown size={13} className="shrink-0" />
+      className={cx("h-8 max-w-full min-w-0 rounded-lg flex items-center gap-1.5 pl-1.5 pr-2 text-[13px] text-ink-2 hover:text-ink disabled:opacity-50 no-drag", open ? "bg-active" : "hover:bg-hover")}>
+      {cfg.model ? <BrandMark model={cfg.model} fallbackIconKey={iconFor(provider, selected)} size={18} /> : <span className="h-6 w-6 shrink-0 flex items-center justify-center"><Cpu size={16} /></span>}
+      <span className="truncate">{label}</span><ChevronDown size={12} className="shrink-0 text-ink-3" />
     </button>
     {open && <div role="dialog" aria-label="Choose a model" style={{ left: offset, maxHeight: heightLimit }} className="pop-in absolute bottom-full left-0 mb-3 z-40 w-[420px] max-w-[calc(100vw-24px)] max-h-[min(580px,75vh)] flex flex-col rounded-2xl border border-line-strong bg-surface shadow-[var(--shadow-lg)] overflow-hidden origin-bottom-left">
       <div className="p-4 pb-3 shrink-0"><h2 className="text-sm font-semibold text-ink mb-3">Choose a model</h2><div className="relative"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" /><Input ref={search} className="pl-9" aria-label="Search models" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search models or providers" /></div></div>

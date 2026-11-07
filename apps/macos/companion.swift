@@ -671,7 +671,7 @@ struct IslandView: View {
                     OrbView(c: c, size: 24, anchor: c.islandOrbAnchor)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(open && c.items.isEmpty && c.mood == .idle ? "Ask Atlas" : c.status)
-                            .font(.system(size: 14, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+                            .font(.system(size: 15, weight: .semibold)).foregroundColor(.white).lineLimit(1)
                         if !c.ticker.isEmpty && c.items.isEmpty {
                             Text(c.ticker).font(.system(size: 11, design: .monospaced)).foregroundColor(Color(white: 0.55)).lineLimit(1)
                                 .truncationMode(.middle).transition(.opacity)
@@ -682,6 +682,13 @@ struct IslandView: View {
                 Spacer(minLength: 6)
                 if c.items.count > 1 { badge("\(c.items.count)") }
                 if open && c.items.isEmpty { modelPicker }
+                if open && !c.cornerMode {
+                    Button(action: toggle) {
+                        Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundColor(Color(white: 0.6))
+                            .frame(width: 24, height: 24).background(Circle().fill(Color.white.opacity(0.07)))
+                    }
+                    .buttonStyle(PressableStyle()).help("Close")
+                }
             }
             .frame(height: height)
         }
@@ -702,13 +709,14 @@ struct IslandView: View {
             }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: "cpu").font(.system(size: 10, weight: .semibold))
+                Circle().fill(c.chosenModel == nil ? Color.orange : Color.green).frame(width: 6, height: 6)
                 Text(c.chosenModel?.short ?? "Choose model").font(.system(size: 11.5, weight: .medium)).lineLimit(1)
-                Image(systemName: "chevron.down").font(.system(size: 8.5, weight: .bold))
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold)).foregroundColor(Color(white: 0.5))
             }
-            .foregroundColor(Color(white: 0.85))
+            .foregroundColor(Color(white: 0.82))
             .padding(.horizontal, 10).padding(.vertical, 5)
-            .background(Capsule().fill(Color.white.opacity(0.1)))
+            .background(Capsule().fill(Color.white.opacity(0.07)))
+            .overlay(Capsule().stroke(Color.white.opacity(0.08)))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -762,61 +770,90 @@ struct IslandView: View {
 
     // MARK: talk to Atlas
 
+    private static let suggestions: [(icon: String, text: String)] = [
+        ("lightbulb", "Explain an error"), ("text.badge.checkmark", "Commit message"), ("list.bullet", "Plan my next step"),
+    ]
+
     private var chat: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if !c.chatAsked.isEmpty {
-                HStack {
-                    Spacer(minLength: 48)
-                    Text(c.chatAsked).font(.system(size: 13)).foregroundColor(.white)
-                        .padding(.horizontal, 12).padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.13)))
-                }
-                HStack(alignment: .top, spacing: 0) {
-                    if c.chatReply.isEmpty {
-                        Text("Thinking…").font(.system(size: 13)).foregroundColor(Color(white: 0.5))
-                    } else {
-                        Text(c.chatReply)
-                            .font(.system(size: 13)).foregroundColor(Color(white: 0.92)).lineSpacing(3)
-                            .lineLimit(10).truncationMode(.head)   // long replies keep their newest lines
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
+        VStack(alignment: .leading, spacing: 14) {
+            if c.chatAsked.isEmpty {
+                // empty state: quick starts that fill the box
+                HStack(spacing: 6) {
+                    ForEach(Self.suggestions, id: \.text) { s in
+                        Button { c.draft = s.text + ": " } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: s.icon).font(.system(size: 10.5, weight: .medium))
+                                Text(s.text).font(.system(size: 11.5, weight: .medium)).lineLimit(1)
+                            }
+                            .foregroundColor(Color(white: 0.72))
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(Capsule().fill(Color.white.opacity(0.06)))
+                            .overlay(Capsule().stroke(Color.white.opacity(0.07)))
+                        }
+                        .buttonStyle(PressableStyle())
                     }
-                    Spacer(minLength: 0)
                 }
+            } else {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Spacer(minLength: 56)
+                                Text(c.chatAsked).font(.system(size: 13.5)).foregroundColor(.white).lineSpacing(2)
+                                    .padding(.horizontal, 14).padding(.vertical, 9)
+                                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white.opacity(0.11)))
+                                    .textSelection(.enabled)
+                            }
+                            if c.chatReply.isEmpty {
+                                HStack(spacing: 8) { ThinkingDots(); Text("Thinking").font(.system(size: 13)).foregroundColor(Color(white: 0.5)) }
+                                    .padding(.leading, 2)
+                            } else {
+                                Text(c.chatReply)
+                                    .font(.system(size: 14)).foregroundColor(Color(white: 0.93)).lineSpacing(4)
+                                    .lineLimit(14).truncationMode(.head)   // long replies keep their newest lines
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .textSelection(.enabled)
+                                    .padding(.horizontal, 2)
+                            }
+                        }
             }
             inputField
-            HStack(spacing: 4) {
+            HStack(spacing: 2) {
                 quietButton("Open in Atlas", icon: "arrow.up.forward.app") {
                     if let id = c.chatId { c.openChat?(id) } else { c.openApp?() }
                 }
-                Spacer()
                 if !c.chatAsked.isEmpty { quietButton("New chat", icon: "square.and.pencil") { c.newChat() } }
+                Spacer()
+                Text("↵ send").font(.system(size: 10.5, weight: .medium)).foregroundColor(Color(white: 0.38))
             }
         }
         .onAppear { c.loadModels() }
     }
 
     private var inputField: some View {
-        let empty = c.draft.trimmingCharacters(in: .whitespaces).isEmpty
-        return HStack(spacing: 6) {
-            TextField(c.chatAsked.isEmpty ? "Ask Atlas anything…" : "Reply…", text: $c.draft, onCommit: { c.ask(c.draft) })
-                .textFieldStyle(.plain).font(.system(size: 13.5)).foregroundColor(.white)
+        let empty = c.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return HStack(alignment: .bottom, spacing: 8) {
+            TextField(c.chatAsked.isEmpty ? "Ask Atlas anything" : "Reply to Atlas", text: $c.draft, axis: .vertical)
+                .lineLimit(1...5)
+                .onSubmit { c.ask(c.draft) }
+                .textFieldStyle(.plain).font(.system(size: 14.5)).foregroundColor(.white)
+                .padding(.vertical, 7)
             Button { c.ask(c.draft) } label: {
                 Group {
                     if c.chatBusy { ProgressView().controlSize(.small).tint(.black) }
-                    else { Image(systemName: "arrow.up").font(.system(size: 12, weight: .bold)) }
+                    else { Image(systemName: "arrow.up").font(.system(size: 13, weight: .bold)) }
                 }
                 .foregroundColor(.black)
-                .frame(width: 26, height: 26)
-                .background(Circle().fill(Color.white.opacity(empty && !c.chatBusy ? 0.35 : 1)))
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(Color.white.opacity(empty && !c.chatBusy ? 0.28 : 1)))
+                .animation(.easeOut(duration: 0.15), value: empty)
             }
             .buttonStyle(PressableStyle())
             .disabled(empty || c.chatBusy)
             .help("Send (Return)")
         }
-        .padding(.leading, 14).padding(.trailing, 5).padding(.vertical, 5)
-        .background(Capsule().fill(Color.white.opacity(0.09)))
-        .overlay(Capsule().stroke(Color.white.opacity(0.08)))
+        .padding(.leading, 16).padding(.trailing, 6).padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color(white: 0.11)))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+        .shadow(color: .black.opacity(0.4), radius: 10, y: 4)
     }
 
     private func quietButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
@@ -915,6 +952,22 @@ struct IslandView: View {
 }
 
 /// Press feedback on pointer-down, like system buttons.
+/// Three dots that breathe in turn while Atlas is thinking.
+struct ThinkingDots: View {
+    var body: some View {
+        TimelineView(.animation) { t in
+            let phase = t.date.timeIntervalSinceReferenceDate * 2.4
+            HStack(spacing: 4) {
+                ForEach(0..<3) { i in
+                    Circle().fill(Color.white)
+                        .frame(width: 5, height: 5)
+                        .opacity(0.25 + 0.6 * max(0, sin(phase - Double(i) * 0.7)))
+                }
+            }
+        }
+    }
+}
+
 struct PressableStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

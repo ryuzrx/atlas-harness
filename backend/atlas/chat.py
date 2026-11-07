@@ -26,6 +26,7 @@ from .providers import ModelRouter, ProviderError
 
 AGENT_TOOL_GROUPS = ("read", "write", "shell", "git", "memory", "mcp")
 HISTORY_MESSAGES = 24
+CHAT_PARALLEL = 4  # chats sharing one model can run side by side
 MAX_ATTACHMENT_CHARS = 200_000
 MAX_IMAGE_CHARS = 6_000_000
 DEFAULT_TITLE = "New chat"
@@ -76,10 +77,10 @@ class ChatService:
         if q.strip():
             like = f"%{q.strip()}%"
             return self.db.q(
-                "SELECT c.* FROM conversations c WHERE c.title LIKE ? OR EXISTS ("
+                "SELECT c.*, (SELECT COUNT(*) FROM chat_messages m2 WHERE m2.conversation_id=c.id AND m2.status IN ('streaming','running')) AS busy FROM conversations c WHERE c.title LIKE ? OR EXISTS ("
                 "SELECT 1 FROM chat_messages m WHERE m.conversation_id=c.id AND m.content LIKE ?) "
                 "ORDER BY c.updated_at DESC LIMIT ?", (like, like, limit))
-        return self.db.q("SELECT * FROM conversations ORDER BY updated_at DESC LIMIT ?", (limit,))
+        return self.db.q("SELECT c.*, (SELECT COUNT(*) FROM chat_messages m2 WHERE m2.conversation_id=c.id AND m2.status IN ('streaming','running')) AS busy FROM conversations c ORDER BY c.updated_at DESC LIMIT ?", (limit,))
 
     def patch(self, cid: str, body: Dict[str, Any]) -> Dict[str, Any]:
         conv = self.get(cid)
@@ -112,6 +113,18 @@ class ChatService:
             if m.get("task_id"):
                 self.orch.cancel(m["task_id"], "Stopped from chat")
 
+    def _interrupt(self, cid: str) -> None:
+        """Stop any in-flight reply and mark it stopped now, recording how long it ran."""
+        live = self.db.q("SELECT * FROM chat_messages WHERE conversation_id=? AND status IN ('streaming','running')", (cid,))
+        if not live:
+            return
+        self.stop(cid)
+        t = now()
+        for m in live:
+            self.db.update("chat_messages", m["id"], {"status": "stopped",
+                           "data": {**(m["data"] or {}), "finished_at": t, "interrupted": True}})
+        self.bus.changed("conversation", cid)
+
     # ------------------------------------------------------------------ sending
     def send(self, cid: str, content: str, attachments: Optional[List[Dict[str, Any]]] = None,
              config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -124,8 +137,8 @@ class ChatService:
             a["type"] = str(a.get("type") or "text/plain")
             limit = MAX_IMAGE_CHARS if a["type"].startswith("image/") else MAX_ATTACHMENT_CHARS
             a["content"] = str(a.get("content") or "")[:limit]
-        if self.db.one("SELECT id FROM chat_messages WHERE conversation_id=? AND status IN ('streaming','running')", (cid,)):
-            raise ChatError("Atlas is still answering. Stop it or wait before sending another message.")
+        # Typing while Atlas is working interrupts it: the run stops and this message takes over.
+        self._interrupt(cid)
         cfg = {**(conv["config"] or {}), **(config or {})}
         mode = cfg.get("mode") or "model"
         tools = [t for t in (cfg.get("tools") or []) if isinstance(t, str)]
@@ -260,7 +273,7 @@ class ChatService:
             self.streams.pop(mid, None)
         cur = self.db.get("chat_messages", mid)
         if cur:
-            self.db.update("chat_messages", mid, {"content": text, "status": status, "data": {**(cur["data"] or {}), **extra}})
+            self.db.update("chat_messages", mid, {"content": text, "status": status, "data": {**(cur["data"] or {}), **extra, "finished_at": now()}})
             self.db.update("conversations", cid, {"updated_at": now()})
             self.bus.broadcast({"kind": "chat_done", "conversation_id": cid, "message_id": mid, "status": status})
             self.bus.changed("conversation", cid)
@@ -286,7 +299,9 @@ class ChatService:
                             status = "done" if ok else "error"
                             text = (task.get("result") or "").strip() or (task.get("error") or "").strip() or \
                                 ("Done." if ok else f"Run {task['status']}.")
-                        self.db.update("chat_messages", mid, {"status": status, "content": text})
+                        data = {**(msg.get("data") or {})}
+                        data.setdefault("finished_at", now())
+                        self.db.update("chat_messages", mid, {"status": status, "content": text, "data": data})
                         self.db.update("conversations", cid, {"updated_at": now()})
                         break
             finally:
@@ -301,7 +316,11 @@ class ChatService:
         if not pid or not model:
             raise ChatError("Choose a model in the Model menu.")
         for a in self.db.q("SELECT * FROM agents WHERE provider_id=? AND model=?", (pid, model)):
-            if (a.get("config") or {}).get("chat_assistant"):
+            cfg_a = a.get("config") or {}
+            if cfg_a.get("chat_assistant"):
+                # older installs created the assistant one-run-at-a-time, which queued every other chat
+                if int(cfg_a.get("max_parallel") or 1) < CHAT_PARALLEL:
+                    a = self.db.update("agents", a["id"], {"config": {**cfg_a, "max_parallel": CHAT_PARALLEL}}) or a
                 return a
         t = now()
         a = self.db.insert("agents", {
@@ -311,7 +330,7 @@ class ChatService:
             "provider_id": pid, "model": model, "tools": list(AGENT_TOOL_GROUPS),
             "params": {"temperature": self.db.setting("agents.default_temperature")},
             "config": {"chat_assistant": True, "context_budget": self.db.setting("agents.default_context_budget"),
-                       "max_parallel": 1},
+                       "max_parallel": CHAT_PARALLEL},
             "created_at": t, "updated_at": t})
         self.bus.changed("agent", a["id"])
         return a

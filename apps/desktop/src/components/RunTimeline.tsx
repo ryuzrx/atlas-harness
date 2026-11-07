@@ -122,12 +122,10 @@ export function RunTimeline({ taskId, live }: { taskId: string; live: boolean })
   if (!steps.length) return live
     ? <div className="px-3 py-2.5 flex items-center gap-2 text-sm text-ink-3" role="status"><AnimatedMark size={16} play="shimmer" /><span className="am-thinking">Working…</span></div>
     : <div className="px-3 py-2.5 text-sm text-ink-3">No tools were used.</div>;
-  const last = steps[steps.length - 1];
   return (
     <div className="px-2 py-1.5" role="log" aria-live="polite">
       {hidden > 0 && <button onClick={() => setAll(true)} className="ml-1 mb-1 text-xs text-ink-3 hover:text-ink">Show {hidden} earlier step{hidden === 1 ? "" : "s"}</button>}
       {shown.map((s) => <StepRow key={s.id} s={s} />)}
-      {live && last.state !== "running" && <div className="px-1 h-8 flex items-center gap-2.5 text-sm text-ink-3"><AnimatedMark size={14} play="shimmer" /><span className="am-thinking">Working…</span></div>}
     </div>
   );
 }
