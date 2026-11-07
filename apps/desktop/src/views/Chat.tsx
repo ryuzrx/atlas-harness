@@ -3,7 +3,7 @@ import {
   ArrowUp, Square, Plus, Box, ChevronDown, Check, X, FileText, Users, Bot, ChevronRight,
   Copy, Pencil, Columns2, Volume2, AlertCircle, Terminal, SlidersHorizontal, ExternalLink, Loader2, Code2, Layers, Sparkles, PanelRight, Cpu,
 } from "lucide-react";
-import { Agent, api, Approval, Model, Project, Provider, subscribe, Task, Team, useApi, useConnected } from "../api";
+import { Agent, api, Approval, Model, Project, Provider, subscribe, Task, Team, TOKEN, useApi, useConnected } from "../api";
 import { BrandMark, brandFor } from "../components/Brand";
 import { ChatModelPicker } from "../components/ChatModelPicker";
 import { SessionPanel } from "../components/SessionPanel";
@@ -34,8 +34,43 @@ const DRAFT_KEY = "atlas_chat_draft_cfg";
 export const loadDraft = (): ChatConfig => { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}"); } catch { return {}; } };
 export const saveDraft = (c: ChatConfig) => localStorage.setItem(DRAFT_KEY, JSON.stringify(c));
 
-const MAX_FILE = 200_000;
-const MAX_IMAGE = 4 * 1024 * 1024;
+const MAX_FILE = 200_000;            // text up to this size goes straight into the prompt
+const MAX_IMAGE = 4 * 1024 * 1024;   // images up to this size are sent to the model as images
+const MAX_UPLOAD = 2 * 1024 ** 3;    // anything bigger is uploaded to disk (up to 2 GB) and opened with tools
+const fmtSize = (n: number) => n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1)} KB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1)} MB` : `${(n / 1024 ** 3).toFixed(2)} GB`;
+
+const CHUNK = 8 * 1024 * 1024;
+
+/** Send one piece of a file; resolves to the upload id. */
+function sendChunk(url: string, body: Blob, onProgress: (loaded: number) => void, signal: { xhr?: XMLHttpRequest }): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    signal.xhr = xhr;
+    xhr.open("POST", url);
+    xhr.setRequestHeader("x-atlas-token", TOKEN);
+    xhr.upload.onprogress = (e) => onProgress(e.loaded);
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) { try { resolve(JSON.parse(xhr.responseText).id); } catch { reject(new Error("Upload failed.")); } }
+      else { let msg = `Upload failed (${xhr.status}).`; try { msg = JSON.parse(xhr.responseText).detail || msg; } catch {} reject(new Error(msg)); }
+    };
+    xhr.onerror = () => reject(new Error("Upload failed: the connection dropped."));
+    xhr.onabort = () => reject(new Error("aborted"));
+    xhr.send(body);
+  });
+}
+
+/** Upload a file in 8 MB pieces so the page never holds more than one piece in memory. */
+async function uploadFile(f: File, onProgress: (p: number) => void, signal: { xhr?: XMLHttpRequest; cancelled?: boolean }): Promise<string> {
+  let id = "";
+  for (let offset = 0; offset < f.size || (offset === 0 && !id); offset += CHUNK) {
+    if (signal.cancelled) throw new Error("aborted");
+    const url = id ? `/api/uploads?id=${encodeURIComponent(id)}&offset=${offset}` : `/api/uploads?name=${encodeURIComponent(f.name)}`;
+    id = await sendChunk(url, f.slice(offset, offset + CHUNK), (loaded) => onProgress(f.size ? Math.min(1, (offset + loaded) / f.size) : 1), signal);
+    if (f.size === 0) break;
+  }
+  return id;
+}
+
 
 // ---------------------------------------------------------------- popover
 function Popover({ open, onClose, children, align = "left", place = "top", width = 300 }: {
@@ -180,7 +215,7 @@ function AccessMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => 
 }
 
 // ---------------------------------------------------------------- composer
-export interface Attachment { name: string; content: string; size: number; type?: string }
+export interface Attachment { name: string; content: string; size: number; type?: string; upload_id?: string; progress?: number }
 
 const STARTERS: { icon: React.ElementType; label: string; text: string }[] = [
   { icon: Code2, label: "Write code", text: "Write code that " },
@@ -198,6 +233,7 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
   const toast = useToast();
   const [text, setText] = useState("");
   const [att, setAtt] = useState<Attachment[]>([]);
+  const uploads = useRef(new Map<string, { xhr?: XMLHttpRequest; cancelled?: boolean }>());
   const [sending, setSending] = useState(false);
   const [drag, setDrag] = useState(false);
   const ta = useRef<HTMLTextAreaElement>(null);
@@ -227,8 +263,25 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
   }, []);
   const addFiles = async (files: FileList | File[]) => {
     for (const f of Array.from(files)) {
+      if (f.size > MAX_UPLOAD) { toast(`${f.name} is ${fmtSize(f.size)}. Files can be up to 2 GB.`, "bad"); continue; }
+      const small = f.type.startsWith("image/") ? f.size <= MAX_IMAGE : f.size <= MAX_FILE;
+      let binary = false;
+      if (small && !f.type.startsWith("image/")) {
+        const head = await f.slice(0, 2000).text();
+        binary = /\u0000/.test(head);
+      }
+      if (!small || binary) {
+        // large or binary: upload it and let Atlas open it with tools
+        const signal: { xhr?: XMLHttpRequest; cancelled?: boolean } = {};
+        uploads.current.set(f.name, signal);
+        setAtt((a) => [...a.filter((x) => x.name !== f.name), { name: f.name, content: "", size: f.size, type: f.type || "application/octet-stream", progress: 0 }]);
+        uploadFile(f, (p) => setAtt((a) => a.map((x) => (x.name === f.name ? { ...x, progress: p } : x))), signal)
+          .then((id) => setAtt((a) => a.map((x) => (x.name === f.name ? { ...x, upload_id: id, progress: 1 } : x))))
+          .catch((e) => { if (e.message !== "aborted") toast(`${f.name}: ${e.message}`, "bad"); setAtt((a) => a.filter((x) => x.name !== f.name)); })
+          .finally(() => uploads.current.delete(f.name));
+        continue;
+      }
       if (f.type.startsWith("image/")) {
-        if (f.size > MAX_IMAGE) { toast(`${f.name} is larger than 4 MB. Choose a smaller image.`, "bad"); continue; }
         const content = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader(); reader.onload = () => resolve(String(reader.result || "").split(",", 2)[1] || "");
           reader.onerror = () => reject(reader.error); reader.readAsDataURL(f);
@@ -237,21 +290,21 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
         setAtt((a) => [...a.filter((x) => x.name !== f.name), { name: f.name, content, size: f.size, type: f.type }]);
         continue;
       }
-      if (f.size > MAX_FILE) { toast(`${f.name} is larger than 200 KB. Attach a smaller text file.`, "bad"); continue; }
       const content = await f.text();
-      if (/\u0000/.test(content.slice(0, 2000))) { toast(`${f.name} looks binary. Only text files can be attached.`, "bad"); continue; }
       setAtt((a) => [...a.filter((x) => x.name !== f.name), { name: f.name, content, size: f.size, type: f.type || "text/plain" }]);
     }
   };
   const submit = async () => {
     if (!text.trim() && !att.length) return;
+    if (att.some((a) => a.progress != null && !a.upload_id)) { toast("Wait for the upload to finish.", "bad"); return; }
     setSending(true);
     const ok = await onSend(text, att);
     setSending(false);
     if (ok) { setText(""); setAtt([]); }
     ta.current?.focus();
   };
-  const canSend = (text.trim() || att.length) && !sending;
+  const uploading = att.some((a) => a.progress != null && a.progress < 1 && !a.upload_id);
+  const canSend = (text.trim() || att.length) && !sending && !uploading;
   return (
     <div onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
       onDrop={(e) => { e.preventDefault(); setDrag(false); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); }}
@@ -260,9 +313,14 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
       {att.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-2">
           {att.map((a) => (
-            <span key={a.name} className="h-7 pl-2 pr-1 rounded-md bg-surface border border-line flex items-center gap-1.5 text-xs text-ink">
-              {a.type?.startsWith("image/") ? <img src={`data:${a.type};base64,${a.content}`} alt="" className="h-5 w-5 rounded object-cover" /> : <FileText size={13} className="text-ink-2" />}{a.name}<span className="text-ink-3">{(a.size / 1024).toFixed(1)} KB</span>
-              <button onClick={() => setAtt((x) => x.filter((y) => y.name !== a.name))} aria-label={`Remove ${a.name}`} className="h-5 w-5 rounded flex items-center justify-center text-ink-3 hover:text-ink"><X size={12} /></button>
+            <span key={a.name} className="relative overflow-hidden h-8 pl-2 pr-1 rounded-lg bg-surface border border-line flex items-center gap-1.5 text-xs text-ink">
+              {a.progress != null && !a.upload_id && <span className="absolute inset-y-0 left-0 bg-[var(--accent-bg)] transition-[width] duration-200" style={{ width: `${Math.round((a.progress || 0) * 100)}%` }} />}
+              <span className="relative flex items-center gap-1.5 min-w-0">
+                {a.type?.startsWith("image/") && a.content ? <img src={`data:${a.type};base64,${a.content}`} alt="" className="h-5 w-5 rounded object-cover" /> : <FileText size={13} className="text-ink-2" />}
+                <span className="truncate max-w-[220px]">{a.name}</span>
+                <span className="text-ink-3 tnum">{a.progress != null && !a.upload_id ? `${Math.round((a.progress || 0) * 100)}% of ${fmtSize(a.size)}` : fmtSize(a.size)}</span>
+              </span>
+              <button onClick={() => { const u = uploads.current.get(a.name); if (u) { u.cancelled = true; u.xhr?.abort(); } setAtt((x) => x.filter((y) => y.name !== a.name)); }} aria-label={`Remove ${a.name}`} className="relative h-5 w-5 rounded flex items-center justify-center text-ink-3 hover:text-ink"><X size={12} /></button>
             </span>
           ))}
         </div>
@@ -294,7 +352,7 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
       <div className="flex items-center gap-1.5 mt-2 -mx-1.5">
         <div className="shrink-0 flex items-center gap-0.5">
         <input ref={file} type="file" multiple hidden onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
-        <button onClick={() => file.current?.click()} aria-label="Attach files" title="Attach text files or images"
+        <button onClick={() => file.current?.click()} aria-label="Attach files" title="Attach files (up to 2 GB)"
           className="h-8 w-8 rounded-lg flex items-center justify-center text-ink-2 hover:text-ink hover:bg-hover shrink-0"><Plus size={18} strokeWidth={1.6} /></button>
         <AgentMenu cfg={cfg} set={setCfg} h={h} />
         <AccessMenu cfg={cfg} set={setCfg} h={h} />

@@ -1,5 +1,19 @@
 # Release notes
 
+## 0.5.6 — 2026-11-07
+
+### Attachments up to 2 GB
+
+- Attach files up to 2 GB. Text under 200 KB and images under 4 MB still go straight to the model. Anything larger, and binary files such as zips, videos and databases, is streamed to disk instead of being pasted into the prompt.
+- Atlas opens large files with its tools: it reads parts of them, searches them, or inspects them with terminal commands. This works in chats without a project too. Only the files you attached are readable, and nothing is copied into your project.
+- Each file shows an upload progress bar in the composer. Send waits until uploads finish, and removing a file cancels its upload.
+- Deleting a chat also deletes the files uploaded to it.
+- Large files upload in 8 MB pieces, so the app never holds a whole file in memory.
+
+### Stability
+
+- If the app window's web content stops (for example under memory pressure), Atlas reloads it instead of leaving a blank window. Running work keeps going and reappears.
+
 ## 0.5.5 — 2026-11-06
 
 ### Auto-resume

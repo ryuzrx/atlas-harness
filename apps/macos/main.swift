@@ -489,6 +489,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKSc
         webView.evaluateJavaScript("window.__atlasNative && window.__atlasNative(\(String(reflecting: id)), \(json))")
     }
 
+    // The page's process can be killed (for example under memory pressure). Reload instead of
+    // leaving a blank window; running work keeps going in the backend and the page picks it back up.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        if ready, port > 0 {
+            webView.load(URLRequest(url: URL(string: "http://127.0.0.1:\(port)/#token=\(token)")!))
+        } else {
+            webView.loadHTMLString(statusPage("Starting Atlas…", detail: "Preparing your workspace."), baseURL: nil)
+        }
+    }
+
     // Keep navigation on the local backend; open anything else in the default browser.
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = action.request.url else { decisionHandler(.cancel); return }

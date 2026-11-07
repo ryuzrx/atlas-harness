@@ -13,12 +13,14 @@ panel and the final result is copied into the message when the task finishes.
 from __future__ import annotations
 
 import asyncio
+import shutil
 import re
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import extensions
+from .config import data_dir
 from .db import DB, new_id, now
 from .events import EventBus
 from .orchestrator import TERMINAL, Orchestrator
@@ -29,6 +31,13 @@ HISTORY_MESSAGES = 24
 CHAT_PARALLEL = 4  # chats sharing one model can run side by side
 MAX_ATTACHMENT_CHARS = 200_000
 MAX_IMAGE_CHARS = 6_000_000
+MAX_UPLOAD_BYTES = 2 * 1024 ** 3   # big files are streamed to disk and read with tools, not pasted into the prompt
+
+
+def uploads_dir() -> Path:
+    d = data_dir() / "uploads"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 DEFAULT_TITLE = "New chat"
 
 
@@ -119,6 +128,12 @@ class ChatService:
                 t = reg.pop(m["id"], None)
                 if t:
                     t.cancel()
+        root = uploads_dir().resolve()
+        for m in self.db.q("SELECT data FROM chat_messages WHERE conversation_id=? AND role='user'", (cid,)):
+            for att in (m["data"] or {}).get("attachments") or []:
+                folder = Path(att["path"]).parent.resolve() if att.get("path") else None
+                if folder and root in folder.parents:
+                    shutil.rmtree(folder, ignore_errors=True)
         self.db.x("DELETE FROM chat_messages WHERE conversation_id=?", (cid,))
         self.db.delete("conversations", cid)
         self.bus.changed("conversation", cid)
@@ -153,8 +168,17 @@ class ChatService:
             raise ChatError("Message is empty.")
         for a in attachments:
             a["type"] = str(a.get("type") or "text/plain")
+            if a.get("upload_id"):
+                # a large file saved by /api/uploads: keep only its location, never its bytes
+                folder = (uploads_dir() / Path(str(a["upload_id"])).name).resolve()
+                files = [f for f in folder.iterdir() if f.is_file()] if folder.is_dir() else []
+                if not files or uploads_dir().resolve() not in folder.parents:
+                    raise ChatError(f"The upload for {a['name']} is missing. Attach it again.")
+                a["path"], a["size"], a["content"] = str(files[0]), files[0].stat().st_size, ""
+                continue
             limit = MAX_IMAGE_CHARS if a["type"].startswith("image/") else MAX_ATTACHMENT_CHARS
             a["content"] = str(a.get("content") or "")[:limit]
+        uploads = [a for a in attachments if a.get("path")]
         # Typing while Atlas is working interrupts it: the run stops and this message takes over.
         self._interrupt(cid)
         cfg = {**(conv["config"] or {}), **(config or {})}
@@ -165,15 +189,19 @@ class ChatService:
         # message asks for it); a chat without a project is a plain, fast model conversation.
         if mode == "model" and cfg.get("project_id"):
             tools = ["project", "read", "write", "shell", "git", "memory", "mcp"]
+        elif mode == "model" and uploads:
+            tools = ["read", "write", "shell"]   # large files need tools to open them
         else:
             tools = []
+        read_roots = [str(Path(a["path"]).parent) for a in uploads]
         if mode == "team" and access_level == "computer_use":
             raise ChatError("Atlas Computer Use is not available for team chats.")
 
         t = now()
         user = self.db.insert("chat_messages", {
             "id": new_id("msg"), "conversation_id": cid, "role": "user", "content": content, "status": "done",
-            "data": {"attachments": [{"name": a["name"], "size": int(a.get("size") or len(a["content"])), "type": a["type"], "content": a["content"]} for a in attachments],
+            "data": {"attachments": [{"name": a["name"], "size": int(a.get("size") or len(a["content"])), "type": a["type"], "content": a["content"],
+                                      **({"path": a["path"]} if a.get("path") else {})} for a in attachments],
                      **({"prompt": _with_attachments(content, attachments)} if attachments else {})},
             "created_at": t})
         upd: Dict[str, Any] = {"config": cfg, "updated_at": t}
@@ -188,7 +216,7 @@ class ChatService:
             task = self.orch.submit_objective(cfg["team_id"], self._context_prompt(cid, prompt, user["id"]),
                                               cfg.get("project_id"), _title_from(content or "Objective"),
                                               config={"access_level": access_level, "tool_limit": tools or None,
-                                                      "user_request": content,
+                                                      "user_request": content, "read_roots": read_roots,
                                                       "conversation_id": cid,
                                                       "computer_consent_for": cfg.get("computer_consent_for"),
                                                "auto_approve": True})
@@ -204,7 +232,7 @@ class ChatService:
                 "title": _title_from(content or "Chat request"), "description": self._context_prompt(cid, prompt, user["id"]),
                 "agent_id": agent["id"], "team_id": agent.get("team_id"), "project_id": cfg.get("project_id"),
                 "kind": "code", "config": {"tool_limit": tools or None, "access_level": access_level,
-                                               "user_request": content,
+                                               "user_request": content, "read_roots": read_roots,
                                                "conversation_id": cid,
                                                "computer_consent_for": cfg.get("computer_consent_for"),
                                                "auto_approve": True}})
@@ -385,10 +413,22 @@ def _title_from(text: str) -> str:
     return (line[:60] + "…") if len(line) > 60 else (line or DEFAULT_TITLE)
 
 
+def _human_size(n: int) -> str:
+    for unit in ("bytes", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "bytes" else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n} bytes"
+
+
 def _with_attachments(content: str, attachments: List[Dict[str, Any]]) -> str:
     parts = [content] if content else []
     for a in attachments:
-        if str(a.get("type", "")).startswith("image/"):
+        if a.get("path"):
+            parts.append(f"Attached file `{a['name']}` ({_human_size(int(a.get('size') or 0))}) is saved at `{a['path']}`. "
+                         "It is too large to include here: open it with your tools (read parts of it, search it, "
+                         "or inspect it with terminal commands such as head, wc, file, unzip -l).")
+        elif str(a.get("type", "")).startswith("image/"):
             parts.append(f"Image attached: `{a['name']}` ({a['type']}).")
         else:
             parts.append(f"Attached file `{a['name']}`:\n```\n{a['content']}\n```")
@@ -397,7 +437,7 @@ def _with_attachments(content: str, attachments: List[Dict[str, Any]]) -> str:
 
 def _model_attachment_content(content: str, attachments: List[Dict[str, Any]]) -> Any:
     images = [a for a in attachments if str(a.get("type", "")).startswith("image/") and a.get("content")]
-    texts = [a for a in attachments if not str(a.get("type", "")).startswith("image/")]
+    texts = [a for a in attachments if not str(a.get("type", "")).startswith("image/") or a.get("path")]
     if not images:
         return _with_attachments(content, texts)
     blocks: List[Dict[str, Any]] = []

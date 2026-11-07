@@ -125,3 +125,43 @@ def test_run_media_lists_and_serves_previews_safely(repo):
         assert c.get(f"/api/tasks/{tid}/file", params={"path": "../../etc/passwd.png"}, headers=H).status_code == 403
         assert c.get(f"/api/tasks/{tid}/file", params={"path": "calc.py"}, headers=H).status_code == 415
         assert c.get(f"/api/tasks/{tid}/file", params={"path": "renders/cube.png"}).status_code == 401
+
+
+def test_large_upload_is_read_with_tools_not_pasted():
+    """Files over the inline limit are streamed to disk; the run gets read access, the prompt gets only a path."""
+    big = ("line of data\n" * 40_000).encode()   # ~520 KB, over the 200 KB inline limit
+    script = {"General assistant": [("read_file", {"path": "PLACEHOLDER"}), ("finish", {"summary": "read it"})]}
+    with client(script) as c:
+        up = c.post("/api/uploads?name=data.log", content=big, headers=H).json()
+        assert up["size"] == len(big) and up["name"] == "data.log"
+        from atlas.chat import uploads_dir
+        path = str(uploads_dir() / up["id"] / "data.log")
+        script["General assistant"][0] = ("read_file", {"path": path})
+        prov = c.post("/api/providers", json={"kind": "scripted", "name": "Scripted"}, headers=H).json()
+        conv = c.post("/api/conversations", json={}, headers=H).json()
+        cfg = {"mode": "model", "provider_id": prov["id"], "model": "scripted"}
+        out = c.post(f"/api/conversations/{conv['id']}/messages", json={
+            "content": "Summarize this log", "config": cfg,
+            "attachments": [{"name": "data.log", "type": "text/plain", "upload_id": up["id"]}]}, headers=H).json()
+        assert out["assistant"]["task_id"], "a large upload runs with tools even without a project"
+        wait_msg(c, conv["id"], timeout=30)
+        task = c.get(f"/api/tasks/{out['assistant']['task_id']}", headers=H).json()
+        assert task["config"]["read_roots"] == [str(uploads_dir() / up["id"])]
+        assert "line of data" not in task["description"]          # bytes are never pasted into the prompt
+        events = c.get(f"/api/events?task_id={task['id']}&type=tool_result", headers=H).json()
+        assert any(e["data"].get("tool") == "read_file" and e["data"].get("ok") for e in events)
+        # deleting the chat removes the upload
+        c.delete(f"/api/conversations/{conv['id']}", headers=H)
+        assert not (uploads_dir() / up["id"]).exists()
+
+
+def test_chunked_upload_appends_in_order():
+    with client({}) as c:
+        first = c.post("/api/uploads?name=big.bin", content=b"a" * 10, headers=H).json()
+        assert first["size"] == 10
+        second = c.post(f"/api/uploads?id={first['id']}&offset=10", content=b"b" * 5, headers=H).json()
+        assert second == {"id": first["id"], "name": "big.bin", "size": 15}
+        # a piece sent at the wrong offset is refused instead of corrupting the file
+        assert c.post(f"/api/uploads?id={first['id']}&offset=3", content=b"x", headers=H).status_code == 409
+        from atlas.chat import uploads_dir
+        assert (uploads_dir() / first["id"] / "big.bin").read_bytes() == b"a" * 10 + b"b" * 5

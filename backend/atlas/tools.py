@@ -49,12 +49,26 @@ class ToolContext:
     finished: Optional[Dict[str, Any]] = None
     ask_user: Optional[Callable[[str, List[str]], Awaitable[str]]] = None
     computer_use: Optional[Callable[[str, Dict[str, Any]], Awaitable[Dict[str, Any]]]] = None
+    read_roots: List[Path] = field(default_factory=list)   # folders of files the user attached to this run
 
     def path(self, rel: str) -> Path:
-        return resolve_in_workspace(self.workspace, rel, block_secrets=bool(self.settings.get("permissions.block_secret_files", True)))
+        block = bool(self.settings.get("permissions.block_secret_files", True))
+        try:
+            return resolve_in_workspace(self.workspace, rel, block_secrets=block)
+        except PermissionDenied:
+            for root in self.read_roots:
+                try:
+                    return resolve_in_workspace(root, rel, block_secrets=block)
+                except PermissionDenied:
+                    continue
+            raise
 
     def rel(self, p: Path) -> str:
-        return str(p.resolve().relative_to(self.workspace.resolve())) or "."
+        try:
+            return str(p.resolve().relative_to(self.workspace.resolve())) or "."
+        except ValueError:
+            return str(p.resolve())   # an attached file outside the workspace
+
 
 
 class ToolError(Exception):

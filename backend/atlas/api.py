@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import shutil
 import os
 import subprocess
 import time
@@ -1024,6 +1025,42 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
     async def delete_conversation(cid: str):
         chat_call(S.chat.delete, cid)
         return {"ok": True}
+
+    @app.post("/api/uploads")
+    async def upload(request: Request, name: str = "file", id: str = "", offset: int = 0):
+        """Stream a large attachment to disk, whole or in chunks (id + offset append to an earlier chunk).
+        The chat then refers to it by id instead of sending its bytes."""
+        from .chat import MAX_UPLOAD_BYTES, uploads_dir
+        if id:
+            folder = uploads_dir() / Path(id).name
+            files = [f for f in folder.iterdir() if f.is_file()] if folder.is_dir() else []
+            if not files:
+                raise HTTPException(404, "Upload not found. Attach the file again.")
+            dest, fresh = files[0], False
+            if dest.stat().st_size != offset:
+                raise HTTPException(409, f"Upload is at {dest.stat().st_size} bytes, not {offset}.")
+        else:
+            uid = new_id("up")
+            folder = uploads_dir() / uid
+            folder.mkdir(parents=True)
+            dest, fresh = folder / (Path(name).name.strip() or "file"), True
+        size = dest.stat().st_size if dest.exists() else 0
+        if size + int(request.headers.get("content-length") or 0) > MAX_UPLOAD_BYTES:
+            if fresh:
+                shutil.rmtree(folder, ignore_errors=True)
+            raise HTTPException(413, "Files can be up to 2 GB.")
+        try:
+            with open(dest, "ab") as f:
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > MAX_UPLOAD_BYTES:
+                        raise HTTPException(413, "Files can be up to 2 GB.")
+                    f.write(chunk)
+        except BaseException:
+            if fresh:
+                shutil.rmtree(folder, ignore_errors=True)
+            raise
+        return {"id": folder.name, "name": dest.name, "size": size}
 
     @app.post("/api/conversations/{cid}/messages")
     async def send_message(cid: str, body: Dict[str, Any] = Body(...)):

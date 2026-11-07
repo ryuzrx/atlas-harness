@@ -904,7 +904,8 @@ depends on the work it checks; no cycles."""
         ctx = ToolContext(workspace=workspace, permissions=perms, settings=settings, request_approval=request_approval,
                           remember=remember, send_message=send_message,
                           mcp_call=self.mcp.call if mcp_tools else None, mcp_tools=mcp_tools, ask_user=ask_user,
-                          computer_use=computer_use if "computer" in perms else None)
+                          computer_use=computer_use if "computer" in perms else None,
+                          read_roots=[Path(x) for x in (task.get("config") or {}).get("read_roots") or [] if Path(x).is_dir()])
 
         def checkpoint(step, state):
             self.db.x("INSERT INTO checkpoints(task_id,step,state,at) VALUES(?,?,?,?)", (task["id"], step, json.dumps(state), now()))
