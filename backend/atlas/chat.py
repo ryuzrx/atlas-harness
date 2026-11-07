@@ -26,7 +26,7 @@ from .events import EventBus
 from .orchestrator import TERMINAL, Orchestrator
 from .providers import ModelRouter, ProviderError
 
-AGENT_TOOL_GROUPS = ("read", "web", "write", "shell", "git", "memory", "mcp")
+AGENT_TOOL_GROUPS = ("read", "write", "shell", "git", "memory", "mcp")
 HISTORY_MESSAGES = 24
 CHAT_PARALLEL = 4  # chats sharing one model can run side by side
 MAX_ATTACHMENT_CHARS = 200_000
@@ -39,34 +39,6 @@ def uploads_dir() -> Path:
     d.mkdir(parents=True, exist_ok=True)
     return d
 DEFAULT_TITLE = "New chat"
-PRINTED_COMMAND = re.compile(r"<(?P<tag>[^\s<>]+)[^<>]*\bparameter=\"command\"[^<>]*>.*?</(?P=tag)>(?:\s*invoke\b|\s*</(?P=tag)\s+invoke>)?", re.S)
-COMMAND_TAG = re.compile(r"<(?P<tag>[^\s<>]+)[^<>]*\bparameter=\"command\"[^<>]*>")
-INVOKE_END = re.compile(r"</[^<>]*?\binvoke\s*>")
-PRINTED_INVOKE = re.compile(r"<[^<>]*?\binvoke\s+name=\"[^\"]+\"[^<>]*>.*?</[^<>]*?\binvoke\s*>", re.S)
-PRINTED_TOOL_BLOCK = re.compile(r"```(?:tool|tool_call)\s*\n.*?\n?```", re.S)
-
-
-def _strip_printed_command(text: str) -> str:
-    clean = INVOKE_END.sub("", PRINTED_TOOL_BLOCK.sub("", PRINTED_INVOKE.sub("", PRINTED_COMMAND.sub("", text or ""))))
-    partial = COMMAND_TAG.search(clean)
-    if partial:
-        clean = clean[:partial.start()]
-    return clean.strip()
-
-
-def _visible_stream(text: str) -> str:
-    """Hold printed command wrappers back while streaming, then remove them."""
-    while True:
-        start = COMMAND_TAG.search(text)
-        if not start:
-            open_tag = text.rfind("<")
-            return text[:open_tag] if open_tag > text.rfind(">") else text
-        tag = start.group("tag")
-        close = re.search(rf"</{re.escape(tag)}>(?:\s*invoke\b|\s*</{re.escape(tag)}\s+invoke>)?", text[start.end():], re.S)
-        if not close:
-            return text[:start.start()]
-        end = start.end() + close.end()
-        text = text[:start.start()] + text[end:]
 
 
 class ChatError(Exception):
@@ -215,15 +187,12 @@ class ChatService:
         access_level = "computer_use" if cfg.get("access_level") == "computer_use" else "workspace"
         # Tools are automatic: a project chat gets everything it needs (git still asks unless the
         # message asks for it); a chat without a project is a plain, fast model conversation.
-        web_search = cfg.get("web_search", True) is not False
         if mode == "model" and cfg.get("project_id"):
             tools = ["project", "read", "write", "shell", "git", "memory", "mcp"]
         elif mode == "model" and uploads:
             tools = ["read", "write", "shell"]   # large files need tools to open them
         else:
             tools = []
-        if web_search and mode == "model":
-            tools.append("web")
         read_roots = [str(Path(a["path"]).parent) for a in uploads]
         if mode == "team" and access_level == "computer_use":
             raise ChatError("Atlas Computer Use is not available for team chats.")
@@ -241,12 +210,6 @@ class ChatService:
         self.db.update("conversations", cid, upd)
         prompt = _with_attachments(content, attachments)
 
-        selected_provider = self.router.providers.get(cfg.get("provider_id") or "") if mode == "model" else None
-        hermes_runtime = bool(selected_provider and selected_provider.kind == "hermes_agent")
-        chat_tool_limit = list(tools or [])
-        if hermes_runtime:
-            chat_tool_limit = list(dict.fromkeys(["read", *chat_tool_limit, *( ["web"] if web_search else [])]))
-
         if mode == "team":
             if not cfg.get("team_id") or not self.db.get("teams", cfg["team_id"]):
                 raise ChatError("Choose a team in the Agent menu.")
@@ -256,10 +219,9 @@ class ChatService:
                                                       "user_request": content, "read_roots": read_roots,
                                                       "conversation_id": cid,
                                                       "computer_consent_for": cfg.get("computer_consent_for"),
-                                                      "web_search": web_search,
-                                                      "auto_approve": bool(cfg.get("auto_approve", True))})
+                                               "auto_approve": True})
             label = {"mode": "team", "team_id": cfg["team_id"]}
-        elif mode == "agent" or hermes_runtime or any(g in AGENT_TOOL_GROUPS for g in tools) or access_level == "computer_use":
+        elif mode == "agent" or any(g in AGENT_TOOL_GROUPS for g in tools) or access_level == "computer_use":
             if mode == "agent":
                 agent = self.db.get("agents", cfg.get("agent_id") or "")
                 if not agent:
@@ -269,12 +231,11 @@ class ChatService:
             task = self.orch.create_task({
                 "title": _title_from(content or "Chat request"), "description": self._context_prompt(cid, prompt, user["id"]),
                 "agent_id": agent["id"], "team_id": agent.get("team_id"), "project_id": cfg.get("project_id"),
-                "kind": "code", "config": {"tool_limit": chat_tool_limit if hermes_runtime else tools or None, "access_level": access_level,
+                "kind": "code", "config": {"tool_limit": tools or None, "access_level": access_level,
                                                "user_request": content, "read_roots": read_roots,
                                                "conversation_id": cid,
                                                "computer_consent_for": cfg.get("computer_consent_for"),
-                                               "web_search": web_search,
-                                               "auto_approve": bool(cfg.get("auto_approve", True))}})
+                                               "auto_approve": True}})
             label = {"mode": "agent", "agent_id": agent["id"], "agent_name": agent["name"]}
         else:
             task = None
@@ -332,30 +293,22 @@ class ChatService:
     async def _stream(self, cid: str, mid: str, pid: str, model: str, messages: List[Dict[str, Any]],
                       cfg: Dict[str, Any], prefix: str = "") -> None:
         buf: List[str] = [prefix] if prefix else []
-        sent = prefix
         last_save = time.monotonic()
 
         async def on_token(tok: str) -> None:
-            nonlocal last_save, sent
+            nonlocal last_save
             buf.append(tok)
-            safe = _visible_stream("".join(buf))
-            if safe.startswith(sent):
-                delta = safe[len(sent):]
-                if delta:
-                    self.bus.broadcast({"kind": "chat_delta", "conversation_id": cid, "message_id": mid, "delta": delta})
-                sent = safe
+            self.bus.broadcast({"kind": "chat_delta", "conversation_id": cid, "message_id": mid, "delta": tok})
             if time.monotonic() - last_save > 2:
                 last_save = time.monotonic()
-                self.db.update("chat_messages", mid, {"content": _visible_stream("".join(buf))})
+                self.db.update("chat_messages", mid, {"content": "".join(buf)})
 
         status, extra = "done", {}
         try:
             params = {"temperature": cfg["temperature"]} if cfg.get("temperature") is not None else None
             res = await self.router.chat(pid, model, messages, on_token=on_token, params=params)
             streamed = "".join(buf[1:] if prefix else buf)
-            text = _strip_printed_command(prefix + (streamed or res.text or ""))
-            if not text and (streamed or res.text):
-                text = "I couldn’t complete that action. Please try again."
+            text = prefix + (streamed or res.text or "")
             extra = {"usage": res.usage, "latency_ms": res.latency_ms}
         except asyncio.CancelledError:
             text, status = "".join(buf), "stopped"

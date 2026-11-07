@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowUp, Square, Plus, Box, ChevronDown, Check, X, FileText, Users, Bot, ChevronRight, Activity,
-  Copy, Pencil, Columns2, Volume2, AlertCircle, SlidersHorizontal, ExternalLink, Loader2, Code2, Layers, Sparkles, PanelRight, Cpu,
+  ArrowUp, Square, Plus, Box, ChevronDown, Check, X, FileText, Users, Bot, ChevronRight,
+  Copy, Pencil, Columns2, Volume2, AlertCircle, Terminal, SlidersHorizontal, ExternalLink, Loader2, Code2, Layers, Sparkles, PanelRight, Cpu,
 } from "lucide-react";
 import { Agent, api, Approval, Model, Project, Provider, subscribe, Task, Team, TOKEN, useApi, useConnected } from "../api";
 import { BrandMark, brandFor } from "../components/Brand";
@@ -13,6 +13,7 @@ import { cx, StatusBadge, useAction, useToast } from "../components/ui";
 import { AtlasMark } from "../components/Logo";
 import { AnimatedMark } from "../components/AnimatedMark";
 import { Markdown, PathBase } from "../components/Markdown";
+import { ExecutionViewer } from "../components/Execution";
 import { RunTimeline, summarizeSteps, useRunSteps } from "../components/RunTimeline";
 import { Starfield } from "../components/Starfield";
 import { RunMedia } from "../components/RunMedia";
@@ -21,7 +22,7 @@ import { RunMedia } from "../components/RunMedia";
 export interface ChatConfig {
   mode?: "model" | "agent" | "team"; provider_id?: string; model?: string; agent_id?: string; team_id?: string;
   tools?: string[]; project_id?: string; access_level?: "read_only" | "workspace" | "computer_use";
-  computer_consent_for?: string; system?: string; temperature?: number | null; auto_approve?: boolean; web_search?: boolean;
+  computer_consent_for?: string; system?: string; temperature?: number | null; auto_approve?: boolean;
 }
 interface ChatMessage {
   id: string; conversation_id: string; role: "user" | "assistant"; content: string;
@@ -194,7 +195,7 @@ function AccessMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => 
     setOpen(false);
   };
   return <div className="relative">
-    <Chip icon={<SlidersHorizontal size={15} strokeWidth={1.6} />} label={level === "computer_use" ? "Computer Use" : cfg.web_search === false ? "" : "Web search"} title="Access and tools" open={open} onClick={() => setOpen((v) => !v)} />
+    <Chip icon={<SlidersHorizontal size={15} strokeWidth={1.6} />} label={level === "computer_use" ? "Computer Use" : ""} title="Access" open={open} onClick={() => setOpen((v) => !v)} />
     <Popover open={open} onClose={() => setOpen(false)} width={300}>
       <MenuLabel>Project</MenuLabel>
       <div className="px-1.5 pb-1">
@@ -207,15 +208,6 @@ function AccessMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => 
       </div>
       <MenuLabel>Access for this chat</MenuLabel>
       {options.map((o) => <MenuRow key={o.id} active={level === o.id} onClick={() => { set({ access_level: o.id }); setOpen(false); }} hint={o.hint}>{o.label}</MenuRow>)}
-      <MenuLabel>Tools</MenuLabel>
-      <label className="flex items-start gap-2.5 rounded-md px-2.5 py-2 hover:bg-hover cursor-pointer">
-        <input type="checkbox" checked={cfg.web_search !== false} onChange={(e) => set({ web_search: e.target.checked })} className="mt-0.5" />
-        <span className="min-w-0"><span className="block text-sm text-ink">Web search</span><span className="block text-xs text-ink-3">Search current public information in this chat.</span></span>
-      </label>
-      <label className="flex items-start gap-2.5 rounded-md px-2.5 py-2 hover:bg-hover cursor-pointer">
-        <input type="checkbox" checked={cfg.auto_approve !== false} onChange={(e) => set({ auto_approve: e.target.checked })} className="mt-0.5" />
-        <span className="min-w-0"><span className="block text-sm text-ink">Auto approve tool actions</span><span className="block text-xs text-ink-3">Use command policy and ask before connector calls. Git commits and Mac input still ask.</span></span>
-      </label>
       <MenuRow active={level === "computer_use"} disabled={!computerReady} onClick={enableComputerUse}
         hint={computerReady ? `${capabilitiesUnverified ? "Model support unverified · " : ""}Use Mac screen and input${localProvider ? " · inference stays on this Mac" : " · screens are shared with provider"}; macOS permissions are required` : cfg.mode === "team" ? "Computer Use isn't available for team chats yet." : !provider || !modelName ? "Choose a model first." : provider.agentic ? "CLI model providers aren't supported for Computer Use." : "This model reports that it doesn't support images or tool calls."}>Atlas Computer Use</MenuRow>
     </Popover>
@@ -437,7 +429,7 @@ function SubRun({ t }: { t: Task }) {
         <div className="px-3 pb-3">
           {t.error && <div className="mb-2 text-xs text-bad">{t.error}</div>}
           {t.result && <div className="mb-2 text-sm text-ink-2 whitespace-pre-wrap">{t.result.slice(0, 1200)}</div>}
-          <div className="-ml-2"><RunTimeline taskId={t.id} live={!['completed', 'failed', 'cancelled'].includes(t.status)} /></div>
+          <div className="rounded-md border border-line overflow-hidden"><ExecutionViewer taskId={t.id} height={260} showFilters={false} /></div>
         </div>
       )}</div></div>
     </div>
@@ -449,6 +441,7 @@ function RunPanel({ taskId, bare }: { taskId: string; bare?: boolean }) {
   const { data: t } = useApi<Task>(`/tasks/${taskId}`, ["task", "approval"]);
   const { data: approvals = [] } = useApi<Approval[]>("/approvals", ["approval", "task"]);
   const [open, setOpen] = useState(true);
+  const [raw, setRaw] = useState(false);
   const [now, setNow] = useState(Date.now() / 1000);
   const { run } = useAction();
   const { steps } = useRunSteps(t && t.kind !== "objective" ? taskId : undefined);
@@ -473,6 +466,8 @@ function RunPanel({ taskId, bare }: { taskId: string; bare?: boolean }) {
         : <div className="-ml-2"><RunTimeline taskId={t.id} live={live} /></div>}
       <RunMedia taskId={t.id} live={live} />
       {t.error && <div className="text-[13px] text-bad">{t.error}</div>}
+      {!isTeam && <button onClick={() => setRaw((v) => !v)} className="text-xs text-ink-3 hover:text-ink">{raw ? "Hide raw log" : "Show raw log"}</button>}
+      {raw && <div className="rounded-xl border border-line overflow-hidden"><ExecutionViewer taskId={t.id} height={300} showFilters={false} /></div>}
     </div>
   );
   if (bare) return <div className="space-y-3">{pending.length > 0 && pending.map((a) => <ApprovalCard key={a.id} a={a} />)}{body}</div>;
@@ -625,17 +620,14 @@ function SettingsPopover({ cfg, set, open, onClose }: { cfg: ChatConfig; set: (p
   );
 }
 
-function ActivityDrawer({ onClose, taskId, live }: { onClose: () => void; taskId?: string; live: boolean }) {
+function ActivityDrawer({ onClose }: { onClose: () => void }) {
   return (
     <aside className="anim-rise w-[380px] max-[1000px]:w-[320px] shrink-0 h-full border-l border-line bg-[var(--sidebar)] flex flex-col fade-in">
       <div className="drag h-[64px] shrink-0 flex items-center justify-between pl-4 pr-3 pt-2">
-        <div className="flex items-center gap-2"><span className="text-base font-medium text-ink">Activity</span>{live && <span className="working-spinner" aria-label="Working" />}</div>
+        <span className="text-base font-medium text-ink">Live activity</span>
         <button onClick={onClose} aria-label="Close activity" className="no-drag h-8 w-8 rounded-md flex items-center justify-center text-ink-2 hover:text-ink hover:bg-hover"><X size={16} /></button>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-4">
-        <div className="px-2 pb-2 text-xs text-ink-3">{live ? "Atlas is working on your request" : taskId ? "Latest run" : "Run activity appears here as Atlas works."}</div>
-        {taskId && <RunTimeline taskId={taskId} live={live} />}
-      </div>
+      <div className="flex-1 min-h-0 px-3 pb-3"><div className="h-full rounded-xl border border-line overflow-hidden"><ExecutionViewer height="100%" showFilters={false} /></div></div>
     </aside>
   );
 }
@@ -676,7 +668,6 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
   // a side pane keeps its own conversation instead of changing the app's route
   const go = (r: { name: string; id?: string }) => (pane && r.name === "chat" ? (r.id ? onOpen?.(r.id) : onClose?.()) : goRoute(r as any));
   const { providers: chatProviders } = useHarnessData();
-  const hermesProviderId = chatProviders.find((p) => p.kind === "hermes_agent" && p.enabled)?.id;
   const wide = settings?.["chat.width"] === "wide";
   const toast = useToast();
   const { data: loadedConv, error, setData } = useApi<ConversationFull>(id ? `/conversations/${id}` : null, ["conversation"]);
@@ -686,13 +677,8 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
   const setDraft = (c: ChatConfig) => setDraftState(c);
   // Chat is mounted behind Welcome; pick up the model chosen there when setup finishes.
   useEffect(() => {
-    if (!id && settings?.["onboarding.completed"]) {
-      const saved = loadDraft();
-      const next = hermesProviderId ? { ...saved, provider_id: hermesProviderId, model: "default", mode: "model" as const } : saved;
-      setDraft(next);
-      if (hermesProviderId) saveDraft(next);
-    }
-  }, [id, settings?.["onboarding.completed"], hermesProviderId]);
+    if (!id && settings?.["onboarding.completed"]) setDraft(loadDraft());
+  }, [id, settings?.["onboarding.completed"]]);
   const [live, setLive] = useState<Record<string, string>>({});
   const msgsRef = useRef<ChatMessage[]>([]);
   const online = useConnected();
@@ -728,9 +714,6 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
   }), [id]);
 
   const messages = conv?.messages || [];
-  const activityMessage = [...messages].reverse().find((m) => m.task_id && (m.status === "running" || m.status === "streaming"))
-    || [...messages].reverse().find((m) => m.task_id);
-  const activityLive = activityMessage?.status === "running" || activityMessage?.status === "streaming";
   msgsRef.current = messages;
   const busy = messages.some((m) => m.status === "streaming" || m.status === "running");
   const liveLen = Object.values(live).reduce((a, s) => a + s.length, 0);
@@ -779,7 +762,7 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
             className={cx("no-drag h-8 w-8 rounded-md flex items-center justify-center", session ? "bg-active text-ink" : "text-ink-2 hover:text-ink hover:bg-hover")}><PanelRight size={18} strokeWidth={1.6} /></button>}
           {!pane && <button onClick={toggleDrawer} aria-label="Live activity" title="Live activity" aria-pressed={drawer}
             className={cx("no-drag h-8 w-8 rounded-md flex items-center justify-center", drawer ? "bg-active text-ink" : "text-ink-2 hover:text-ink hover:bg-hover")}>
-            <Activity size={18} strokeWidth={1.6} /></button>}
+            <Terminal size={18} strokeWidth={1.6} /></button>}
           <div className="relative">
             <button onClick={() => setSettingsOpen((o) => !o)} aria-label="Chat settings" title="Chat settings" aria-expanded={settingsOpen}
               className={cx("no-drag h-8 w-8 rounded-md flex items-center justify-center", settingsOpen ? "bg-active text-ink" : "text-ink-2 hover:text-ink hover:bg-hover")}>
@@ -833,7 +816,7 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
         )}
       </div>
       {session && !empty && !notFound && <SessionPanel messages={messages} cfg={cfg} onClose={toggleSession} />}
-      {drawer && !split && <ActivityDrawer onClose={toggleDrawer} taskId={activityMessage?.task_id} live={!!activityLive} />}
+      {drawer && !split && <ActivityDrawer onClose={toggleDrawer} />}
     </div>
   );
 }

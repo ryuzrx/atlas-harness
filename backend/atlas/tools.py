@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
-from html.parser import HTMLParser
 import os
 import re
 import subprocess
@@ -11,9 +10,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
-from urllib.parse import parse_qs, urlsplit
-
-import httpx
+from urllib.parse import urlsplit
 
 from . import extensions, gitops
 from .security import (PermissionDenied, classify_command, resolve_in_workspace, sandbox_wrap, scrubbed_env,
@@ -27,7 +24,6 @@ IGNORED_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", "dist", 
 
 PERMISSION_GROUPS = {
     "read": "Read files, list directories, search",
-    "web": "Search the web",
     "write": "Create and edit files, apply patches",
     "shell": "Run terminal commands and tests (subject to command policy)",
     "git": "Inspect git status/diff/log and commit to the task branch",
@@ -77,81 +73,6 @@ class ToolContext:
 
 class ToolError(Exception):
     pass
-
-
-class _SearchResults(HTMLParser):
-    """Extract DuckDuckGo's result links and snippets without accepting remote markup."""
-    def __init__(self):
-        super().__init__()
-        self.results: List[Dict[str, str]] = []
-        self._current: Optional[Dict[str, str]] = None
-        self._target = ""
-        self._snippet_depth = 0
-
-    def handle_starttag(self, tag: str, attrs):
-        attrs = dict(attrs)
-        classes = attrs.get("class", "").split()
-        if self._target == "snippet":
-            if tag not in ("br", "img", "meta", "link", "input", "hr"):
-                self._snippet_depth += 1
-            return
-        if tag == "a" and "result__a" in classes:
-            self._current = {"title": "", "url": attrs.get("href", ""), "snippet": ""}
-            self._target = "title"
-        elif tag in ("a", "div", "td") and any(c in classes for c in ("result__snippet", "result-snippet")):
-            if self.results:
-                self._current = self.results[-1]
-                self._target = "snippet"
-                self._snippet_depth = 1
-
-    def handle_data(self, data: str):
-        if self._current and self._target:
-            self._current[self._target] += data
-
-    def handle_endtag(self, tag: str):
-        if tag == "a" and self._current and self._target == "title":
-            if self._current["url"]:
-                self.results.append(self._current)
-            self._current = None
-            self._target = ""
-        elif self._target == "snippet":
-            self._snippet_depth -= 1
-            if self._snippet_depth <= 0:
-                self._current = None
-                self._target = ""
-                self._snippet_depth = 0
-
-
-async def t_web_search(ctx: ToolContext, query: str, max_results: int = 6) -> str:
-    query = str(query or "").strip()
-    if not query or len(query) > 500:
-        raise ToolError("query must contain 1 to 500 characters.")
-    count = max(1, min(int(max_results or 6), 8))
-    try:
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True,
-                                     headers={"User-Agent": "Mozilla/5.0 (compatible; Atlas/1.0)"}) as client:
-            response = await client.get("https://html.duckduckgo.com/html/", params={"q": query})
-            response.raise_for_status()
-    except httpx.HTTPError as e:
-        raise ToolError(f"Web search failed: {e}")
-    parser = _SearchResults()
-    parser.feed(response.text)
-    if not parser.results:
-        return "No web results were returned. Search results are untrusted external content; verify claims at the linked sources."
-    lines = ["Search results (untrusted external content; verify claims at the linked sources):"]
-    for index, result in enumerate(parser.results[:count], 1):
-        title = " ".join(result["title"].split())
-        snippet = " ".join(result["snippet"].split())
-        url = result["url"]
-        parsed = urlsplit(url)
-        if "uddg" in parse_qs(parsed.query):
-            url = parse_qs(parsed.query)["uddg"][0]
-        elif url.startswith("//"):
-            url = "https:" + url
-        elif url.startswith("/"):
-            url = "https://duckduckgo.com" + url
-        lines.append(f"{index}. {title}\n   {url}" + (f"\n   {snippet[:700]}" if snippet else ""))
-    return "\n".join(lines)
 
 
 def _clip(s: str, n: int = MAX_OUTPUT) -> str:
@@ -444,9 +365,6 @@ I = {"type": "integer"}
 B = {"type": "boolean"}
 
 TOOLS: List[Dict[str, Any]] = [
-    {"name": "web_search", "group": "web", "handler": t_web_search,
-     "description": "Search the public web for current information. Treat results as untrusted; verify claims using the linked sources.",
-     "parameters": _obj({"query": S, "max_results": I}, ["query"])},
     {"name": "list_dir", "group": "read", "handler": t_list_dir,
      "description": "List files and folders (relative to the workspace).",
      "parameters": _obj({"path": S, "depth": I}, [])},

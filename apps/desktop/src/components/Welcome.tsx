@@ -386,7 +386,7 @@ function FreeProviderConnection({ preset, onDone }: { preset: Preset; onDone: ()
 }
 
 function CliSetup({ presets, onDone }: { presets: Preset[]; onDone: () => void }) {
-  const clis = presets.filter((p) => p.kind === "hermes_agent" || p.kind === "claude_code" || (p.kind === "codex_cli" && !p.config?.oss));
+  const clis = presets.filter((p) => p.kind === "claude_code" || (p.kind === "codex_cli" && !p.config?.oss));
   const { data: providers = [], reload } = useApi<Provider[]>("/providers", ["provider"]);
   const [found, setFound] = useState<Record<string, any>>({});
   const { busy, run } = useAction();
@@ -408,7 +408,7 @@ function CliSetup({ presets, onDone }: { presets: Preset[]; onDone: () => void }
               </div>
               {!r ? <Loader2 size={15} className="animate-spin text-ink-3" /> : added ? <span className="text-sm text-ink-2 flex items-center gap-1"><Check size={14} />Added</span> :
                 r.ok ? <Button size="sm" variant="primary" busy={busy === p.id} onClick={() => run(p.id, () => api("/providers", { body: { kind: p.kind, name: p.label, config: p.config || {} } }), `${p.label} connected`).then(reload)}>Connect</Button> :
-                  docs[p.kind] ? <Button size="sm" onClick={() => openExternal(docs[p.kind])}>How to install</Button> : <span className="text-xs text-ink-3">Set up the Atlas Agent runtime first.</span>}
+                  <Button size="sm" onClick={() => openExternal(docs[p.kind])}>How to install</Button>}
             </div>
           );
         })}

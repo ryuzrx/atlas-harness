@@ -75,7 +75,7 @@ if (h1) {
 
 function startReveals() {
   h1?.classList.add("is-in");
-const targets = document.querySelectorAll(".hero-copy > :not(h1), .hero-visual, .intro-inner > *, .feature-copy, .feature-image, .privacy-heading, .privacy-detail, .privacy-basics > div, .faq-heading, .faq-list details, .closing-section, .story-copy > .eyebrow, .story-copy > h2, .section-head, .island-row > *, .detail-grid article");
+const targets = document.querySelectorAll(".hero-copy > :not(h1), .hero-visual, .intro-inner > *, .feature-copy, .feature-image, .privacy-heading, .privacy-detail, .privacy-basics > div, .faq-heading, .faq-list details, .closing-section, .story-copy > .eyebrow, .story-copy > h2");
 targets.forEach((el, i) => { el.setAttribute("data-reveal", ""); el.style.setProperty("--d", `${(i % 4) * 70}ms`); });
 if (reduceMotion || !("IntersectionObserver" in window)) {
   targets.forEach((el) => el.classList.add("is-in"));

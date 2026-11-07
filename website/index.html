@@ -33,8 +33,7 @@
       </button>
       <nav id="main-nav" class="main-nav" aria-label="Main navigation">
         <a href="#how-it-works">How it works</a>
-        <a href="#parallel">Parallel chats</a>
-        <a href="#work">Work</a>
+        <a href="#models">Models</a>
         <a href="#privacy">Your data</a>
         <a href="https://github.com/ryuzrx/atlas-harness/blob/main/docs/USER_GUIDE.md">Documentation</a>
         <a class="nav-download" href="https://github.com/ryuzrx/atlas-harness/releases/latest">Download Atlas</a>
@@ -44,7 +43,7 @@
     <main id="top">
       <section class="hero section-wrap">
         <div class="hero-copy">
-          <a class="pill" href="#parallel"><span class="pill-new">New</span> Run several chats at once <span aria-hidden="true">→</span></a>
+          <a class="pill" href="#how-it-works"><span class="pill-new">New</span> Project chats, grouped in your sidebar <span aria-hidden="true">→</span></a>
           <h1>Your models. Your work.<br /><span class="muted">No account.</span></h1>
           <p class="hero-lede">Atlas is a local-first macOS workspace for chatting with models, building in your projects, and running AI agents. Download it, connect a model, start.</p>
           <div class="hero-actions">
@@ -58,7 +57,7 @@
         <div class="hero-visual">
           <div class="app-window">
             <div class="window-chrome" aria-hidden="true"><span></span><span></span><span></span><div></div></div>
-            <img class="hero-screenshot" src="./assets/chat-workspace.png" alt="An Atlas chat explaining JavaScript closures, with a code example and the model picker beside the send button" width="2880" height="1800" fetchpriority="high" />
+            <img class="hero-screenshot" src="./assets/chat-workspace.png" alt="Atlas chat workspace with a model picker, tool controls, and a clean project sidebar" width="1440" height="900" fetchpriority="high" />
           </div>
         </div>
       </section>
@@ -78,22 +77,22 @@
             <div class="section-wrap story-grid">
               <div class="story-copy">
                 <p class="eyebrow">How Atlas works</p>
-                <h2>Pick a model.<br />Ask. Hand off the work.</h2>
+                <h2>Choose a model.<br />Then get to work.</h2>
                 <ol class="story-steps">
                   <li class="story-step is-active" data-step="0">
                     <span class="step-num">01</span>
-                    <div><h3>Pick a model</h3><p>Run one locally, connect any compatible endpoint, or use the Claude Code and Codex sign-ins you already have.</p></div>
-                    <img class="step-shot" src="./assets/models-workspace.png" alt="Atlas Models page with runtime sources and a searchable local model library" width="2880" height="1800" loading="lazy" />
+                    <div><h3>Choose a model</h3><p>Browse local options, connect a compatible endpoint, or use the Claude Code and Codex sign-ins you already have.</p></div>
+                    <img class="step-shot" src="./assets/models-workspace.png" alt="Atlas model workspace showing a local Ollama endpoint and searchable model library" width="1440" height="900" loading="lazy" />
                   </li>
                   <li class="story-step" data-step="1">
                     <span class="step-num">02</span>
-                    <div><h3>Ask in a chat</h3><p>Answers read like a conversation. Attach files up to 2 GB and Atlas opens them for you.</p></div>
-                    <img class="step-shot" src="./assets/chat-workspace.png" alt="An Atlas chat with a formatted answer and code example" width="2880" height="1800" loading="lazy" />
+                    <div><h3>Start a conversation</h3><p>Choose a model, attach files, and decide which tools the conversation can use.</p></div>
+                    <img class="step-shot" src="./assets/chat-workspace.png" alt="Atlas chat workspace with a model picker, tool controls, and a clean project sidebar" width="1440" height="900" loading="lazy" />
                   </li>
                   <li class="story-step" data-step="2">
                     <span class="step-num">03</span>
-                    <div><h3>Hand off the work</h3><p>In a project, Atlas reads, edits and tests on its own, and shows each step as it goes.</p></div>
-                    <img class="step-shot" src="./assets/work-workspace.png" alt="An Atlas project chat working through steps: listing files, reading, writing, and running a typecheck" width="2880" height="1800" loading="lazy" />
+                    <div><h3>Work in your project</h3><p>Open a local folder, describe the task, and review what agents do as they work.</p></div>
+                    <img class="step-shot" src="./assets/work-workspace.png" alt="Atlas Work workspace with a local project folder and chat-style task composer" width="1440" height="900" loading="lazy" />
                   </li>
                 </ol>
               </div>
@@ -112,74 +111,17 @@
         </div>
       </section>
 
-      <section id="parallel" class="parallel-section">
-        <div class="section-wrap">
-          <div class="section-head">
-            <p class="eyebrow">Parallel chats</p>
-            <h2>Start the next thing<br /><span class="muted">while the last one works.</span></h2>
-            <p>Every chat runs on its own. Open up to four side by side, each with its own model, and switch away whenever you like. A spinner marks anything still working.</p>
-          </div>
-          <figure class="feature-image feature-image-wide">
-            <img src="./assets/split-workspace.png" alt="Two Atlas chats side by side: a finished project fix on the left and a JavaScript explanation on the right" width="2880" height="1800" loading="lazy" />
-            <figcaption>Split view: a project fix and a quick question, side by side.</figcaption>
-          </figure>
-          <div class="island-row">
-            <div class="island-copy">
-              <h3>Your notch keeps count</h3>
-              <p>The Dynamic Island shows how many chats are working. Open it to see each one and jump straight to it.</p>
-            </div>
-            <div class="island-shot"><img src="./assets/island-sessions.png" alt="Atlas Dynamic Island listing three working chats, each with a spinner" width="920" height="278" loading="lazy" /></div>
-          </div>
-        </div>
-      </section>
-
-      <section id="work" class="agents-section">
-        <div class="section-wrap feature-row feature-row-reverse">
-          <figure class="feature-image feature-image-work">
-            <img src="./assets/work-workspace.png" alt="An Atlas project chat working through steps with a live timer and a Stop control" width="2880" height="1800" loading="lazy" />
-            <figcaption>Each step shows up as it happens.</figcaption>
-          </figure>
-          <div class="feature-copy">
-            <p class="eyebrow">Work in your projects</p>
-            <h2>Tools just work.<br /><span class="muted">Git asks first.</span></h2>
-            <p>Open a folder and describe the job. Atlas reads, edits, and runs commands on its own branch without stopping to ask. Commits, pushes, and anything else that rewrites history wait for your OK, unless you asked for them.</p>
-            <div class="feature-points">
-              <span><b>No setup</b>: files, terminal, and connectors are on by default</span>
-              <span><b>Git is gated</b>: history changes ask unless your message asks for them</span>
-              <span><b>Redirect anytime</b>: type a new message and Atlas switches course</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="details-section">
-        <div class="section-wrap">
-          <div class="section-head">
-            <p class="eyebrow">Built to keep going</p>
-            <h2>Fewer things to babysit.</h2>
-          </div>
-          <div class="detail-grid">
-            <article><h3>Picks up after a restart</h3><p>If Atlas quits mid-task, the run resumes where it stopped, with its earlier changes still in place.</p></article>
-            <article><h3>No step limit</h3><p>Agents keep going until the job is done. If one gets stuck repeating itself, it stops on its own.</p></article>
-            <article><h3>Files up to 2 GB</h3><p>Big logs, zips, and datasets upload in the background. Atlas opens them with its tools instead of stuffing the prompt.</p></article>
-            <article><h3>Works with any model's style</h3><p>Tool calls are understood even when a model writes them as text, so more models can do real work.</p></article>
-            <article><h3>A context meter that knows</h3><p>See how much of the model's context window your chat is using, even for providers that don't report it.</p></article>
-            <article><h3>Never a blank window</h3><p>If the window's content stops, Atlas reloads it, and your running work reappears.</p></article>
-          </div>
-        </div>
-      </section>
-
       <section id="models" class="model-section">
         <div class="section-wrap feature-row">
           <div class="feature-copy">
             <p class="eyebrow">Model choice, made clear</p>
             <h2>Your models stay your choice.</h2>
-            <p>Use local runtimes, compatible endpoints, or the Claude Code and Codex sign-ins you already have. Find a model that fits your Mac, download it, and pick it right from the message box.</p>
+            <p>Use local runtimes, compatible endpoints, or the Claude Code and Codex sign-ins you already use. See the connection and chosen model as you work.</p>
             <a class="text-link" href="https://github.com/ryuzrx/atlas-harness/blob/main/docs/USER_GUIDE.md#connect-a-model">Explore model setup</a>
           </div>
           <figure class="feature-image feature-image-models">
-            <img src="./assets/models-workspace.png" alt="Atlas Models page with runtime sources and a local model library" width="2880" height="1800" loading="lazy" />
-            <figcaption>Runtimes, models, and downloads in one place.</figcaption>
+            <img src="./assets/models-workspace.png" alt="Local model library in Atlas, with model categories and download controls" width="1440" height="900" loading="lazy" />
+            <figcaption>Browse runtimes, models, and downloads together.</figcaption>
           </figure>
         </div>
       </section>
@@ -187,14 +129,33 @@
       <section class="teams-section">
         <div class="section-wrap feature-row feature-row-reverse">
           <figure class="feature-image feature-image-teams">
-            <img src="./assets/teams-workspace.png" alt="Atlas Teams page showing two demo teams ready for an objective" width="2880" height="1800" loading="lazy" />
-            <figcaption>Teams stay ready for the next objective.</figcaption>
+            <img src="./assets/teams-workspace.png" alt="Atlas Teams workspace showing two demo teams and their shared objectives" width="1440" height="900" loading="lazy" />
+            <figcaption>Keep team setup and shared work together.</figcaption>
           </figure>
           <div class="feature-copy">
             <p class="eyebrow">Agents with a shared goal</p>
             <h2>Give every agent a role. Follow the work.</h2>
-            <p>Start from a team template, give each agent a model, and hand the team an objective. The lead plans, the others build and review, and you follow it all in one place.</p>
+            <p>Start with a team template, assign models from your connected endpoints, and follow the plan, activity, and approvals in one place. If an agent needs context, answer its question and the same run continues.</p>
             <a class="text-link" href="https://github.com/ryuzrx/atlas-harness/blob/main/docs/USER_GUIDE.md">Explore teams and agents</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="agents-section">
+        <div class="section-wrap feature-row feature-row-reverse">
+          <figure class="feature-image feature-image-work">
+            <img src="./assets/work-workspace.png" alt="Atlas Work workspace with a local project folder and chat-style task composer" width="1440" height="900" loading="lazy" />
+            <figcaption>A local folder becomes a focused workspace.</figcaption>
+          </figure>
+          <div class="feature-copy">
+            <p class="eyebrow">A clear path from chat to code</p>
+            <h2>Work with your files,<br />right where they live.</h2>
+            <p>Open a local folder and give Atlas the context it needs. Start a project chat, use tools when you need them, and review agent activity and file changes as you go.</p>
+            <div class="feature-points">
+              <span><b>Local</b> folders by default</span>
+              <span><b>Chats</b> grouped with projects</span>
+              <span><b>Review</b> before changes land</span>
+            </div>
           </div>
         </div>
       </section>
@@ -206,13 +167,13 @@
             <h2>Local when you want it.<br /><span>Connected when you choose.</span></h2>
           </div>
           <div class="privacy-detail">
-            <p>Atlas keeps chats, settings, uploads, and project state on your Mac. Local models keep everything on your machine. When you pick a hosted model or agent CLI, only that request goes to that provider.</p>
+            <p>Atlas stores chats, settings, and project state on your Mac. Local inference can stay on your machine. When you choose a hosted model or agent CLI, the relevant requests go to that provider.</p>
             <a class="text-link text-link-light" href="https://github.com/ryuzrx/atlas-harness/blob/main/PRIVACY.md">Read the privacy details</a>
           </div>
           <div class="privacy-basics">
-            <div><strong>Local-first</strong><span>Your folders, chats, and files stay on this Mac.</span></div>
+            <div><strong>Local-first</strong><span>Start with folders on this Mac.</span></div>
             <div><strong>Your credentials</strong><span>Provider keys stay in macOS Keychain.</span></div>
-            <div><strong>Your choice</strong><span>You decide where each request goes.</span></div>
+            <div><strong>Your choice</strong><span>Choose where each model request goes.</span></div>
           </div>
         </div>
       </section>
@@ -226,23 +187,11 @@
           <div class="faq-list">
             <details>
               <summary>Do I need to create an account?</summary>
-              <p>No Atlas account is needed. Download the app, connect a model, and start.</p>
+              <p>No Atlas account is needed. Download the app, connect a model if you want one, and start working.</p>
             </details>
             <details>
               <summary>Can Atlas run with local models?</summary>
               <p>Yes. Connect a local runtime such as Ollama, LM Studio, MLX-LM, or another compatible server. If you choose a hosted model or CLI, its requests go to that provider.</p>
-            </details>
-            <details>
-              <summary>Will an agent change my git history on its own?</summary>
-              <p>No. Agents work on their own branch, and commits, pushes, merges, and resets wait for your OK unless your message asked for them.</p>
-            </details>
-            <details>
-              <summary>What happens if Atlas quits in the middle of a task?</summary>
-              <p>The run picks back up the next time Atlas starts, and keeps the changes it already made.</p>
-            </details>
-            <details>
-              <summary>How big can attachments be?</summary>
-              <p>Up to 2 GB. Small files go straight to the model; bigger ones are saved on your Mac and opened with Atlas's tools.</p>
             </details>
             <details>
               <summary>Can I use Claude Code or Codex?</summary>
@@ -278,7 +227,7 @@
         <a href="https://github.com/ryuzrx/atlas-harness">GitHub</a>
         <a href="https://github.com/ryuzrx/atlas-harness/blob/main/LICENSE">AGPL-3.0</a>
       </nav>
-      <span class="footer-version">Atlas 0.5.7</span>
+      <span class="footer-version">Atlas 0.4</span>
     </footer>
     <script src="./main.js" defer></script>
   </body>

@@ -37,7 +37,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 function Choice({ value, options, onPick }: { value: number | string; options: [number | string, string][]; onPick: (v: any) => void }) {
   return <Segmented value={String(value)} onChange={(v) => onPick(typeof options[0][0] === "number" ? Number(v) : v)} options={options.map(([v, l]) => ({ id: String(v), label: l }))} />;
 }
-const ABILITY_LABELS: Record<string, string> = { read: "Read files", web: "Search the web", write: "Edit files", shell: "Run commands", git: "Use git", memory: "Remember things", messages: "Message teammates", mcp: "Use connected apps" };
+const ABILITY_LABELS: Record<string, string> = { read: "Read files", write: "Edit files", shell: "Run commands", git: "Use git", memory: "Remember things", messages: "Message teammates", mcp: "Use connected apps" };
 
 export function Settings() {
   const { settings, saveSettings, setSettingsOpen } = useStore();

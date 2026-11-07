@@ -60,13 +60,6 @@ def cli_env(binary: str, use_env_auth: bool = False) -> Dict[str, str]:
         for k in list(env):
             if k.startswith(STRIP_PREFIXES[name]):
                 env.pop(k)
-    if not use_env_auth and name == "hermes":
-        # Hermes uses its own profile credentials. Do not pass Atlas' provider keys into
-        # the runtime or make them visible to terminal tools it launches.
-        for k in list(env):
-            if k.endswith("_API_KEY") or k in {"HF_TOKEN", "HUGGINGFACEHUB_API_TOKEN", "AWS_SECRET_ACCESS_KEY",
-                                                 "AWS_SESSION_TOKEN", "GOOGLE_APPLICATION_CREDENTIALS"}:
-                env.pop(k)
     dirs = [str(Path(binary).parent)] + [str(Path(d).expanduser()) for d in SEARCH_DIRS]
     env["PATH"] = ":".join(dirs + [env.get("PATH", "/usr/bin:/bin")])
     return env
@@ -107,12 +100,11 @@ class CLIAgentProvider(Provider):
                 await p.communicate()
 
     async def _stream(self, run_id: str, argv: List[str], cwd: str, stdin_text: str,
-                      on_line: Callable[[Dict[str, Any]], Awaitable[None]], timeout: float,
-                      env_override: Optional[Dict[str, str]] = None) -> int:
+                      on_line: Callable[[Dict[str, Any]], Awaitable[None]], timeout: float) -> int:
         b = argv[0]
         proc = await asyncio.create_subprocess_exec(
             *argv, cwd=cwd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE, env=env_override or cli_env(b, bool(self.config.get("use_env_auth"))), limit=16 * 1024 * 1024)
+            stderr=asyncio.subprocess.PIPE, env=cli_env(b, bool(self.config.get("use_env_auth"))), limit=16 * 1024 * 1024)
         self.procs[run_id] = proc
         stderr_buf: List[str] = []
 
@@ -371,119 +363,4 @@ class CodexProvider(CLIAgentProvider):
         sandbox = "workspace-write" if permissions.get("write") else "read-only"
         full = (system + "\n\n" + prompt) if system else prompt
         return await self._run(run_id, self._base(model, sandbox, cwd), cwd, full, on_event, timeout)
-
-class HermesProvider(CLIAgentProvider):
-    """Hermes Agent runtime, preserving its native tool loop and JSONL events."""
-    kind = "hermes_agent"
-    binary_name = "hermes"
-
-    async def list_models(self) -> List[ModelInfo]:
-        names = self.config.get("models") or ["default"]
-        return [ModelInfo(name=n, provider_id=self.id,
-                          capabilities={"tools": True, "streaming": True, "agentic": True},
-                          details={"display_name": "Atlas Agent default" if n == "default" else n,
-                                   "description": "Uses the model and provider configured for Atlas Agent.",
-                                   "note": "Runs the agent loop with native tools."}, state="available")
-                for n in dict.fromkeys(n for n in names if isinstance(n, str) and n.strip())]
-
-    async def chat(self, model, messages, *, tools=None, params=None, on_token: TokenCallback = None, json_mode=False):
-        system = "\n\n".join(m.get("content", "") for m in messages if m["role"] == "system")
-        convo = "\n\n".join(f"[{m['role']}]\n{m.get('content') or ''}" for m in messages if m["role"] != "system")
-        prompt = (system + "\n\n" if system else "") + convo
-        b = self.binary
-        if not b:
-            raise ProviderError("Atlas Agent runtime is unavailable. Check its executable path and configure its model first.", retryable=False)
-        cwd = str(Path.home())
-        argv = [b, "--in", cwd, "chat", "--oneshot", "--query-file", "-", "--format", "stream-json", "--source", "tool"]
-        if model and model != "default":
-            argv += ["--model", model]
-        argv += ["--toolsets", "web,search", "--run-budget", "3600", "--max-turns",
-                 str(int(self.config.get("max_turns") or 100))]
-        result = ChatResult()
-        t0 = time.perf_counter()
-
-        async def on_line(ev):
-            kind = ev.get("type")
-            if kind == "text":
-                chunk = str(ev.get("text") or "")
-                result.text += chunk
-                if on_token:
-                    await on_token(chunk)
-            elif kind == "tool_use":
-                result.tool_calls.append({"id": str(ev.get("id") or f"hermes_{len(result.tool_calls)}"),
-                                          "name": str(ev.get("name") or "tool"),
-                                          "arguments": ev.get("input") or {}})
-            elif kind == "result":
-                tok = ev.get("tokens") or {}
-                result.usage = {"prompt_tokens": tok.get("input", 0), "completion_tokens": tok.get("output", 0),
-                                "total_tokens": tok.get("total", 0)}
-                if ev.get("exit_code") not in (None, 0):
-                    raise ProviderError(str(ev.get("error") or ev.get("text") or "Atlas Agent run failed")[:800], retryable=False)
-
-        try:
-            await self._stream(f"chat-{id(result)}", argv, cwd, prompt, on_line, 3600)
-        except (asyncio.TimeoutError, ProviderError):
-            raise
-        except Exception as e:  # noqa: BLE001
-            raise ProviderError(f"Atlas Agent failed: {e}", retryable=False) from e
-        result.latency_ms = (time.perf_counter() - t0) * 1000
-        return result
-
-    async def run_agent(self, *, run_id, prompt, system, cwd, model, permissions, on_event, timeout):
-        b = self.binary
-        if not b:
-            raise ProviderError("Atlas Agent runtime is unavailable. Check its executable path and configure its model first.", retryable=False)
-        toolsets = []
-        if permissions.get("network"):
-            toolsets += ["web", "search"]
-        # Hermes' terminal tool does not accept Atlas' command allowlist, so expose it only
-        # when Atlas has granted unrestricted command execution for this run.
-        if permissions.get("bash_any"):
-            toolsets.append("terminal")
-        if permissions.get("read") or permissions.get("write"):
-            toolsets.append("file")
-        argv = [b, "--in", cwd, "chat", "--oneshot", "--query-file", "-", "--format", "stream-json", "--source", "tool"]
-        if model and model != "default":
-            argv += ["--model", model]
-        argv += ["--run-budget", str(max(1, int(timeout))), "--max-turns",
-                 str(int(self.config.get("max_turns") or 100))]
-        if toolsets:
-            argv += ["--toolsets", ",".join(dict.fromkeys(toolsets))]
-        if permissions.get("bash_any"):
-            argv.append("--yolo")
-        full_prompt = (system + "\n\n" if system else "") + prompt
-        final = {"text": "", "usage": {}}
-        tool_started_at = {}
-
-        async def on_line(ev):
-            kind = ev.get("type")
-            if kind == "text":
-                final["text"] += str(ev.get("text") or "")
-                await on_event("agent_message", {"text": str(ev.get("text") or "")})
-            elif kind == "tool_use":
-                if ev.get("id") is not None:
-                    tool_started_at[str(ev["id"])] = time.perf_counter()
-                await on_event("tool_call", {"tool": ev.get("name") or "tool", "args": ev.get("input") or {},
-                                              "id": ev.get("id"), "runtime": "hermes_agent"})
-            elif kind == "tool_result":
-                started = tool_started_at.pop(str(ev.get("id")), None) if ev.get("id") is not None else None
-                await on_event("tool_result", {"id": ev.get("id"), "tool": ev.get("name") or "tool", "output": str(ev.get("output") or "")[:8000],
-                                                "is_error": bool(ev.get("is_error")),
-                                                "ms": round((time.perf_counter() - started) * 1000) if started is not None else None,
-                                                "runtime": "hermes_agent"})
-            elif kind == "result":
-                tok = ev.get("tokens") or {}
-                final["usage"] = {"prompt_tokens": tok.get("input", 0), "completion_tokens": tok.get("output", 0),
-                                  "total_tokens": tok.get("total", 0), "duration_ms": ev.get("duration_ms")}
-                if ev.get("text"):
-                    final["text"] = str(ev["text"])
-                if ev.get("exit_code") not in (None, 0):
-                    raise ProviderError(str(ev.get("error") or "Atlas Agent run failed")[:800], retryable=False)
-
-        env = cli_env(b, bool(self.config.get("use_env_auth")))
-        # Bound Hermes' native file editor to this run's workspace. For read-only runs,
-        # use a unique root that does not exist, which makes all file mutations fail closed.
-        env["HERMES_WRITE_SAFE_ROOT"] = cwd if permissions.get("write") else str(Path(cwd) / f".atlas-readonly-{run_id}")
-        await self._stream(run_id, argv, cwd, full_prompt, on_line, timeout, env_override=env)
-        return final
 

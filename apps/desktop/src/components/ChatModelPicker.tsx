@@ -7,10 +7,10 @@ import { BrandMark } from "./Brand";
 import { resolveProviderIconKey } from "./Endpoints";
 import { Button, cx, Input, Select } from "./ui";
 
-const modelTitle = (model: string, kind?: string) => kind === "hermes_agent" && model === "default" ? "Atlas Agent default" : kind === "claude_code"
+const modelTitle = (model: string, kind?: string) => kind === "claude_code"
   ? ({ default: "Claude Code default", opus: "Claude Opus", sonnet: "Claude Sonnet", haiku: "Claude Haiku" } as Record<string, string>)[model] || model
   : kind === "codex_cli" && model === "default" ? "Codex default" : model;
-const cli = (kind?: string) => kind === "claude_code" || kind === "codex_cli" || kind === "hermes_agent";
+const cli = (kind?: string) => kind === "claude_code" || kind === "codex_cli";
 
 export function ChatModelPicker({ cfg, set, models, providers, agents, loading }: {
   cfg: ChatConfig; set: (patch: ChatConfig) => void; models: Model[]; providers: Provider[]; agents: Agent[]; loading: boolean;

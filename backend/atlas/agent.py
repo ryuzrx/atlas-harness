@@ -106,8 +106,6 @@ def _bare_json_objects(text: str) -> List[str]:
 INVOKE_BLOCK = re.compile(r"<[^<>]*?\binvoke\s+name=\"([^\"]+)\"[^<>]*>(.*?)</[^<>]*?\binvoke\s*>", re.S)
 PARAM_BLOCK = re.compile(r"<[^<>]*?\bparameter\s+name=\"([^\"]+)\"([^<>]*)>(.*?)</[^<>]*?\bparameter\s*>", re.S)
 CALLS_WRAPPER = re.compile(r"<[^<>]*?\b(?:function_)?calls\s*>|</[^<>]*?\b(?:function_)?calls\s*>")
-PRINTED_COMMAND = re.compile(r"<(?P<tag>[^\s<>]+)[^<>]*\bparameter=\"command\"[^<>]*>.*?</(?P=tag)>(?:\s*invoke\b|\s*</(?P=tag)\s+invoke>)?", re.S)
-INVOKE_END = re.compile(r"</[^<>]*?\binvoke\s*>")
 
 
 def _parse_invoke_calls(text: str) -> List[Dict[str, Any]]:
@@ -129,8 +127,7 @@ def _parse_invoke_calls(text: str) -> List[Dict[str, Any]]:
 
 def strip_tool_markup(text: str) -> str:
     """Remove printed tool-call markup so it never shows up as the reply."""
-    clean = CALLS_WRAPPER.sub("", PRINTED_COMMAND.sub("", INVOKE_BLOCK.sub("", text or "")))
-    return INVOKE_END.sub("", clean).strip()
+    return CALLS_WRAPPER.sub("", INVOKE_BLOCK.sub("", text or "")).strip()
 
 
 def parse_text_tool_calls(text: str) -> List[Dict[str, Any]]:
@@ -186,13 +183,11 @@ class AgentRunner:
         params = dict(agent.get("params") or {})
         budget = int((agent.get("config") or {}).get("context_budget") or 16000)
         params.setdefault("num_ctx", min(max(budget + 4096, 8192), 131072))
-        params.setdefault("max_tokens", 4096)
         await emit("agent_started", {"model": model, "provider": prov.name, "provider_kind": prov.kind, "tool_mode": mode,
                                       "context_budget": budget})
         nudged = 0
         recent: List[str] = []
         usage_total = {"prompt_tokens": 0, "completion_tokens": 0}
-        invalid_tool_streak = 0
         # No step limit: the agent works until it finishes. The repeat guard below still stops a stuck loop.
         for step in itertools.count(1):
             msgs = compact(msgs, budget)
@@ -237,7 +232,7 @@ class AgentRunner:
                     msgs.append({"role": "user", "content": "No tool call detected. Continue working with the tools, or call "
                                                             "`finish` with a summary if the task is complete."})
                     continue
-                return {"status": "completed", "summary": visible or "I couldn’t complete that action. Please try again.", "verification": "", "steps": step,
+                return {"status": "completed", "summary": visible or res.text, "verification": "", "steps": step,
                         "usage": usage_total, "note": "Agent ended without calling finish."}
             for call in calls:
                 shown_args = _short_args(call["arguments"])
@@ -249,10 +244,6 @@ class AgentRunner:
                 await emit("tool_result", {"id": call["id"], "tool": call["name"], "ok": out["ok"],
                                             "output": out["output"][:6000], "ms": round((time.perf_counter() - t1) * 1000),
                                             "denied": out.get("denied", False)})
-                output_text = str(out.get("output") or "")
-                schema_failure = (not out["ok"] and any(marker in output_text.lower() for marker in
-                                  ("missing required argument", "bad arguments:", "unknown tool")))
-                invalid_tool_streak = invalid_tool_streak + 1 if schema_failure else 0
                 if call["name"] in ("write_file", "edit_file", "apply_patch") and out["ok"]:
                     await emit("file_edit", {"tool": call["name"], "path": call["arguments"].get("path"), "result": out["output"]})
                 if mode == "native":
@@ -261,11 +252,6 @@ class AgentRunner:
                     msgs.append({"role": "user", "content": f"TOOL RESULT ({call['name']}, ok={out['ok']}):\n{out['output']}"})
                 if out.get("image"):
                     msgs.append({"role": "user", "content": [{"type": "text", "text": "Current screen capture. Analyze this frame before choosing the next action."}, out["image"]]})
-                if invalid_tool_streak >= 2:
-                    message = "Stopped after two invalid tool calls. Check the required arguments and try again."
-                    await emit("error", {"message": message})
-                    return {"status": "failed", "summary": message, "verification": "", "steps": step,
-                            "usage": usage_total}
                 if ctx.finished:
                     break
             checkpoint(step, {"files_changed": sorted(ctx.files_changed), "commands": ctx.commands_run[-20:],

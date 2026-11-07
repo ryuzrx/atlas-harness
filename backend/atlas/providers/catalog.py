@@ -86,8 +86,6 @@ PROVIDER_PRESETS: List[Dict[str, Any]] = [
      "note": "Runs `claude -p` in an isolated worktree with your Claude sign-in."},
     {"id": "codex_cli", "label": "Codex CLI", "kind": "codex_cli", "category": "cli",
      "note": "Runs `codex exec` in an isolated worktree with your Codex sign-in."},
-    {"id": "hermes_agent", "label": "Atlas Agent", "kind": "hermes_agent", "category": "cli",
-     "note": "Uses your configured agent runtime, native tools, and web search."},
     {"id": "codex_oss", "label": "Codex CLI + local model", "kind": "codex_cli", "category": "cli",
      "note": "Codex's agent loop driven by a local Ollama model (`--oss`).", "config": {"oss": True, "local_provider": "ollama"}},
 ]
