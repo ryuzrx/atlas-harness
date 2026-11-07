@@ -77,7 +77,6 @@ export function AgentEditor({ agent, onSaved }: { agent: Agent; onSaved?: () => 
             <Field label="Temperature"><Input type="number" step="0.1" min="0" max="2" value={a.params.temperature ?? ""} onChange={(e) => prm("temperature", e.target.value === "" ? undefined : +e.target.value)} /></Field>
             <Field label="Max output tokens"><Input type="number" value={a.params.max_tokens ?? ""} placeholder="default" onChange={(e) => prm("max_tokens", e.target.value ? +e.target.value : undefined)} /></Field>
             <Field label="Context budget"><Input type="number" value={a.config.context_budget ?? 16000} onChange={(e) => cfg("context_budget", +e.target.value)} /></Field>
-            <Field label="Max steps"><Input type="number" value={a.config.max_steps ?? ""} placeholder="default" onChange={(e) => cfg("max_steps", e.target.value ? +e.target.value : undefined)} /></Field>
             <Field label="Max duration (s)"><Input type="number" value={a.config.max_duration_s ?? ""} placeholder="default" onChange={(e) => cfg("max_duration_s", e.target.value ? +e.target.value : undefined)} /></Field>
             <Field label="Retries"><Input type="number" min="0" max="5" value={a.config.max_retries ?? ""} placeholder="default" onChange={(e) => cfg("max_retries", e.target.value === "" ? undefined : +e.target.value)} /></Field>
             <Field label="Parallel tasks"><Input type="number" min="1" max="4" value={a.config.max_parallel ?? 1} onChange={(e) => cfg("max_parallel", +e.target.value)} /></Field>

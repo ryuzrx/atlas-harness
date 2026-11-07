@@ -71,7 +71,6 @@ DEFAULT_SETTINGS = {
     "execution.max_concurrent_tasks": 3,
     "execution.auto_resume": True,   # pick interrupted runs and replies back up after a restart
     "execution.max_concurrent_inference": 2,
-    "execution.max_agent_steps": 40,
     "execution.command_timeout_s": 120,
     "execution.task_timeout_s": 1800,
     "execution.max_retries": 1,

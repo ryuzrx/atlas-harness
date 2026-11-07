@@ -8,6 +8,7 @@ Two tool protocols:
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import re
 import time
@@ -158,7 +159,7 @@ class AgentRunner:
         self.router = router
 
     async def run(self, *, agent: Dict[str, Any], system_prompt: str, task_prompt: str, ctx: ToolContext,
-                  emit: Emit, max_steps: int, checkpoint: Callable[[int, Dict[str, Any]], None],
+                  emit: Emit, max_steps: int = 0, checkpoint: Callable[[int, Dict[str, Any]], None],
                   on_token: Optional[Callable[[str], Awaitable[None]]] = None) -> Dict[str, Any]:
         prov = self.router.get(agent["provider_id"])
         model = agent["model"]
@@ -187,7 +188,8 @@ class AgentRunner:
         nudged = 0
         recent: List[str] = []
         usage_total = {"prompt_tokens": 0, "completion_tokens": 0}
-        for step in range(1, max_steps + 1):
+        # No step limit: the agent works until it finishes. The repeat guard below still stops a stuck loop.
+        for step in itertools.count(1):
             msgs = compact(msgs, budget)
             est = messages_tokens(msgs)
             await emit("llm_request", {"step": step, "est_prompt_tokens": est, "messages": len(msgs)})
@@ -256,8 +258,6 @@ class AgentRunner:
                               "messages": len(msgs)})
             if ctx.finished:
                 return {**ctx.finished, "steps": step, "usage": usage_total}
-        return {"status": "failed", "summary": f"Stopped after reaching the step limit ({max_steps}).", "verification": "",
-                "steps": max_steps, "usage": usage_total}
 
 
 def _short_args(args: Dict[str, Any]) -> Dict[str, Any]:

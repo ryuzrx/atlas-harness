@@ -1,5 +1,13 @@
 # Release notes
 
+## 0.5.7 — 2026-11-07
+
+### No step limit
+
+- Agents no longer stop after a fixed number of steps. A run keeps going until the agent finishes, so large multi-file tasks don't end with "Stopped after reaching the step limit".
+- An agent that gets stuck repeating the same response still stops on its own.
+- The "Effort per task" setting and the per-agent "Max steps" field are gone.
+
 ## 0.5.6 — 2026-11-07
 
 ### Attachments up to 2 GB

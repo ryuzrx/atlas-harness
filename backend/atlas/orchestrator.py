@@ -910,9 +910,8 @@ depends on the work it checks; no cycles."""
         def checkpoint(step, state):
             self.db.x("INSERT INTO checkpoints(task_id,step,state,at) VALUES(?,?,?,?)", (task["id"], step, json.dumps(state), now()))
 
-        max_steps = int((agent.get("config") or {}).get("max_steps") or settings["execution.max_agent_steps"])
         res = await self.runner.run(agent=agent, system_prompt=system, task_prompt=prompt, ctx=ctx, emit=emit,
-                                    max_steps=max_steps, checkpoint=checkpoint, on_token=self._token_cb(task["id"], agent["id"]))
+                                    checkpoint=checkpoint, on_token=self._token_cb(task["id"], agent["id"]))
         res["files_changed"] = sorted(ctx.files_changed)
         res["commands"] = ctx.commands_run
         return res

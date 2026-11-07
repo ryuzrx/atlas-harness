@@ -192,8 +192,6 @@ export function Settings() {
                 <Choice value={settings["agents.default_temperature"] ?? 0.2} options={[[0.1, "Precise"], [0.4, "Balanced"], [0.8, "Creative"]]} onPick={set("agents.default_temperature")} /></Row>
               <Row label="Working memory" hint="How much an agent can keep in mind at once. Larger needs more memory.">
                 <Choice value={settings["agents.default_context_budget"] ?? 16000} options={[[8000, "Small"], [16000, "Medium"], [32000, "Large"], [64000, "Huge"]]} onPick={set("agents.default_context_budget")} /></Row>
-              <Row label="Effort per task" hint="How many steps an agent may take before it stops.">
-                <Choice value={settings["execution.max_agent_steps"] ?? 40} options={[[20, "Quick"], [40, "Standard"], [100, "Thorough"]]} onPick={set("execution.max_agent_steps")} /></Row>
             </Group>
             <Group title="New agents">
               <div className="py-5">
