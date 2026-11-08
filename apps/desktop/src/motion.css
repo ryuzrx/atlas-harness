@@ -45,6 +45,18 @@
 .chat-model-option[aria-checked="true"] { border-color: var(--border-strong); background: var(--selected); }
 .chat-model-option .model-option-title { font-size: 14px; font-weight: 600; color: var(--text); }
 .chat-model-option .model-option-detail { font-size: 12px; line-height: 18px; color: var(--text-2); }
+.reasoning-popover { transform-origin: bottom right; }
+.reasoning-track { position: absolute; height: 5px; left: 0; right: 0; top: 13px; border-radius: 999px; background: var(--active); overflow: hidden; }
+.reasoning-track > span { display: block; height: 100%; border-radius: inherit; background: var(--primary); transition: width 220ms var(--spring); }
+.reasoning-tick { position: absolute; z-index: 1; top: 11px; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%; background: var(--text-3); pointer-events: none; transition: background-color 180ms ease, scale 180ms var(--spring); }
+.reasoning-tick.is-active { background: var(--primary); }
+.reasoning-slider { position: relative; z-index: 2; display: block; width: 100%; height: 31px; margin: 0; appearance: none; background: transparent; cursor: pointer; outline: none; }
+.reasoning-slider::-webkit-slider-runnable-track { height: 5px; background: transparent; }
+.reasoning-slider::-webkit-slider-thumb { width: 30px; height: 30px; margin-top: -12.5px; appearance: none; border: 0; border-radius: 50%; background: var(--on-primary); box-shadow: 0 1px 5px rgba(0,0,0,.24); transition: scale 140ms var(--spring); }
+.reasoning-slider:active::-webkit-slider-thumb { scale: 1.08; }
+.reasoning-slider::-moz-range-track { height: 5px; background: transparent; }
+.reasoning-slider::-moz-range-thumb { width: 30px; height: 30px; border: 0; border-radius: 50%; background: var(--on-primary); box-shadow: 0 1px 5px rgba(0,0,0,.24); }
+.reasoning-slider:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   .atlas-loading-track > span { width: 100%; opacity: .6; transform: none; }

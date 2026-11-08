@@ -9,7 +9,6 @@ import { Markdown } from "./Markdown";
 import { ConnectForm, isConnected, Preset, ProviderTile } from "./Endpoints";
 import { FREE_MODEL_PROVIDERS, starterModels } from "./freeModels";
 import { ModelFolder } from "./ModelFolder";
-import { TeamAdvisor } from "./TeamAdvisor";
 import { PackGrid } from "./SkillPacks";
 import { SkillHub } from "./SkillHub";
 import TERMS from "../../../../TERMS.md?raw";
@@ -196,7 +195,7 @@ function SafetyStep({ onNext }: { onNext: () => void }) {
           body="Commands run without asking. Destructive commands still always ask, and dangerous ones are always blocked." />
       </div>
       <div className="mt-6 rounded-lg border border-line bg-surface divide-y divide-[var(--border)]">
-        {[["execution.require_plan_approval", "Review team plans first", "When a team gets an objective, you approve the lead's plan before agents start."],
+        {[["execution.require_plan_approval", "Review agent plans first", "When agents plan larger work, review their plan before they start."],
           ["general.notifications", "Desktop notifications", "Get notified when an approval is needed or a run finishes while Atlas is in the background."]].map(([k, t, b]) => (
           <div key={k} className="flex items-center gap-4 px-4 py-3.5">
             <div className="flex-1 min-w-0"><div className="text-base text-ink">{t}</div><div className="text-xs text-ink-3 mt-0.5">{b}</div></div>
@@ -386,14 +385,14 @@ function FreeProviderConnection({ preset, onDone }: { preset: Preset; onDone: ()
 }
 
 function CliSetup({ presets, onDone }: { presets: Preset[]; onDone: () => void }) {
-  const clis = presets.filter((p) => p.kind === "claude_code" || (p.kind === "codex_cli" && !p.config?.oss));
+  const clis = presets.filter((p) => p.kind === "hermes_cli" || p.kind === "claude_code" || (p.kind === "codex_cli" && !p.config?.oss));
   const { data: providers = [], reload } = useApi<Provider[]>("/providers", ["provider"]);
   const [found, setFound] = useState<Record<string, any>>({});
   const { busy, run } = useAction();
   useEffect(() => {
     clis.forEach((p) => api("/providers/test-config", { body: { kind: p.kind, config: p.config || {} } }).then((r) => setFound((f) => ({ ...f, [p.id]: r }))).catch((e) => setFound((f) => ({ ...f, [p.id]: { ok: false, error: e.message } }))));
   }, [clis.length]);
-  const docs: Record<string, string> = { claude_code: "https://docs.claude.com/en/docs/claude-code/overview", codex_cli: "https://github.com/openai/codex" };
+  const docs: Record<string, string> = { hermes_cli: "https://github.com/NousResearch/hermes-agent", claude_code: "https://docs.claude.com/en/docs/claude-code/overview", codex_cli: "https://github.com/openai/codex" };
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-line bg-surface divide-y divide-[var(--border)]">
@@ -447,7 +446,6 @@ export function Welcome() {
   const choose = (p: Path) => { setPath(p); setStep(p === "explore" ? 4 : 3); };
   const title = useMemo(() => ({ local: "Run models on this Mac", cloud: "Connect an API key", free: "Connect free online models", cli: "Use Claude Code or Codex", explore: "" } as Record<Path, string>), []);
   const s = settings || {};
-  const { data: teams = [] } = useApi<any[]>(step === 7 ? "/teams" : null, ["team"]);
   const { data: packs = [] } = useApi<{ skills: { installed: boolean }[] }[]>(step === 7 ? "/skillpacks" : null, ["settings"]);
   const skillCount = packs.reduce((a, p) => a + p.skills.filter((x) => x.installed).length, 0);
   const summary: [string, string, number][] = [
@@ -457,7 +455,6 @@ export function Welcome() {
     ["Send with", s["chat.send_key"] === "mod_enter" ? "⌘ Enter" : "Enter", 1],
     ["Models", providers.length ? providers.map((p) => p.name).join(", ") : "None yet", 2],
     ["Commands", ({ ask: "Ask every time", allowlist: "Allow safe commands", auto: "Don't ask" } as any)[s["permissions.command_policy"] || "ask"], 4],
-    ["Teams", teams.length ? teams.map((t) => t.name).join(", ") : "None yet", 5],
     ["Skills", skillCount ? `${skillCount} skill${skillCount === 1 ? "" : "s"} added` : "None yet", 6],
     ["Plans", s["execution.require_plan_approval"] ? "Reviewed before agents start" : "Agents start right away", 4],
   ];
@@ -524,9 +521,7 @@ export function Welcome() {
               {path === "cli" && <CliSetup presets={presets} onDone={() => setStep(4)} />}
             </>}
 
-            {step === 4 && <SafetyStep onNext={() => setStep(5)} />}
-
-            {step === 5 && <TeamAdvisor onDone={() => setStep(6)} onSkip={() => setStep(6)} />}
+            {step === 4 && <SafetyStep onNext={() => setStep(6)} />}
 
             {step === 6 && <>
               <h1 className="text-center text-2xl leading-tight font-semibold tracking-[-0.02em] text-ink">Add some skills</h1>

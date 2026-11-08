@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Starfield } from "../components/Starfield";
 import { ChevronDown, Download, FolderPlus, Folder, GitBranch, Laptop, GitFork, X } from "lucide-react";
-import { api, pickFolder, Project, useApi } from "../api";
+import { api, pickFolder, Project, Provider, useApi } from "../api";
 import { useStore } from "../store";
 import { useAddProject } from "../components/useAddProject";
-import { Attachment, ChatConfig, Composer, loadDraft, saveDraft } from "./Chat";
+import { Attachment, ChatConfig, clearHermesPlaceholder, Composer, loadDraft, prepareAutoTeamConfig, saveDraft } from "./Chat";
 import { Button, Menu, useToast } from "../components/ui";
 import { useImportScan } from "../components/ImportSettings";
 
@@ -16,7 +16,12 @@ export function WorkHome({ pinnedProjectId }: { pinnedProjectId?: string }) {
   const toast = useToast();
   const { add } = useAddProject();
   const { data: projects = [], loading } = useApi<Project[]>("/projects", ["project"]);
+  const { data: providers = [] } = useApi<Provider[]>("/providers", ["provider"]);
   const [cfg, setCfgState] = useState<ChatConfig>(loadDraft);
+  useEffect(() => {
+    const cleaned = clearHermesPlaceholder(loadDraft(), providers);
+    if (cleaned) { setCfgState(cleaned); saveDraft(cleaned); }
+  }, [providers]);
   const [pid, setPid] = useState<string | undefined>(() => pinnedProjectId || localStorage.getItem("atlas_last_project") || undefined);
   const [source, setSource] = useState<"local" | "git">("local");
   const [showGit, setShowGit] = useState(false);
@@ -51,8 +56,9 @@ export function WorkHome({ pinnedProjectId }: { pinnedProjectId?: string }) {
     if (!project) { toast("Add a project folder first.", "bad"); return false; }
     if ((full.mode || "model") === "model" && (!full.provider_id || !full.model)) { toast("Choose a model first.", "bad"); return false; }
     try {
-      const c = await api<{ id: string }>("/conversations", { body: { config: full } });
-      await api(`/conversations/${c.id}/messages`, { body: { content: text, attachments, config: full } });
+      const sendCfg = await prepareAutoTeamConfig(full, text, attachments);
+      const c = await api<{ id: string }>("/conversations", { body: { config: sendCfg } });
+      await api(`/conversations/${c.id}/messages`, { body: { content: text, attachments, config: sendCfg } });
       go({ name: "chat", id: c.id });
       return true;
     } catch (e: any) { toast(e.message || String(e), "bad"); return false; }

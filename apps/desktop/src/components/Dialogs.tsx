@@ -126,23 +126,19 @@ export function CommandPalette() {
   }, [q]);
   const close = () => setPaletteOpen(false);
   const items = useMemo<PaletteItem[]>(() => {
-    const nav: [RouteName, string][] = [["chat", "Chat"], ["agents", "Agents"], ["teams", "Teams"], ["models", "Models"], ["tasks", "Runs"],
+    const nav: [RouteName, string][] = [["chat", "Chat"], ["agents", "Agents"], ["models", "Models"], ["automations", "Automations"], ["customizations", "Customizations"],
       ["activity", "Activity"], ["projects", "Projects"], ["settings", "Settings"]];
     const base: PaletteItem[] = [
       { id: "chat", label: "New chat", hint: "⌘N", group: "Actions", run: () => go({ name: "chat" }) },
-      { id: "new", label: "New run…", group: "Actions", run: () => setNewTaskOpen(true) },
-      { id: "team", label: "Create team…", group: "Actions", run: () => go({ name: "teams", tab: "create" }) },
       { id: "sb", label: "Toggle sidebar", hint: "⌘B", group: "Actions", run: toggleSidebar },
       { id: "theme", label: `Switch to ${document.documentElement.dataset.theme === "dark" ? "light" : "dark"} appearance`, group: "Actions",
         run: () => saveSettings({ "general.theme": document.documentElement.dataset.theme === "dark" ? "light" : "dark" }) },
       ...nav.map(([id, label]) => ({ id: `go-${id}`, label: `Go to ${label}`, group: "Navigate", run: () => go({ name: id }) })),
-      ...(found.teams || []).map((t: any) => ({ id: t.id, label: t.name, group: "Teams", run: () => go({ name: "team", id: t.id }) })),
       ...(found.agents || []).map((a: any) => ({ id: a.id, label: a.name, hint: a.role, group: "Agents", run: () => { go({ name: "agents" }); setTimeout(() => select({ kind: "agent", id: a.id }), 0); } })),
-      ...(found.tasks || []).map((t: any) => ({ id: t.id, label: t.title, hint: t.status, group: "Runs", run: () => { go({ name: "tasks" }); setTimeout(() => select({ kind: "task", id: t.id }), 0); } })),
       ...(found.projects || []).map((p: any) => ({ id: p.id, label: p.name, group: "Projects", run: () => go({ name: "projects", id: p.id }) })),
     ];
     const s = q.toLowerCase().trim();
-    return s ? base.filter((i) => ["Teams", "Agents", "Tasks", "Projects"].includes(i.group) || i.label.toLowerCase().includes(s)) : base;
+    return s ? base.filter((i) => ["Agents", "Projects"].includes(i.group) || i.label.toLowerCase().includes(s)) : base;
   }, [q, found, settings]);
   useEffect(() => setIdx(0), [items.length]);
   if (!paletteOpen) return null;
@@ -153,7 +149,7 @@ export function CommandPalette() {
         className="pop-in w-[600px] max-w-[92vw] bg-surface rounded-lg shadow-[var(--shadow-lg)] overflow-hidden">
         <div className="flex items-center gap-2.5 px-4 h-12 border-b border-line">
           <Search size={16} className="text-ink-3" />
-          <input ref={input} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search teams, agents, tasks, or run a command"
+          <input ref={input} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search agents, projects, or commands"
             className="flex-1 bg-transparent outline-none focus-visible:outline-none text-base placeholder:text-ink-3"
             onKeyDown={(e) => {
               if (e.key === "Escape") close();

@@ -1,5 +1,21 @@
 # Release notes
 
+## 0.5.10 — 2026-11-08
+
+### Chat and work improvements
+
+- Added prompt enhancement, optional automatic teams, parallel model comparisons, and more useful agent customization.
+- Reworked integrations and customizations with clearer setup and app-focused discovery.
+- Added a community skills pack with 388 open-source skills and source attribution.
+- Removed raw logs from Chat and Work activity views.
+
+### Reliability
+
+- Fixed macOS backend startup and made startup diagnostics easier to recover.
+- Automatic teams now apply their step budget across native and connected agent runtimes.
+- The updater remains enabled: it checks after launch and every six hours, validates the download, then asks before installing.
+
+
 ## 0.5.9 — 2026-11-07
 
 ### Clickable files and folders

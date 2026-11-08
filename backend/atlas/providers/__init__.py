@@ -18,7 +18,7 @@ from ..db import DB, new_id, now
 from ..security import load_secret
 from .anthropic import AnthropicProvider
 from .base import ChatResult, ModelInfo, Provider, ProviderError
-from .cli_agents import ClaudeCodeProvider, CodexProvider, find_binary
+from .cli_agents import ClaudeCodeProvider, CodexProvider, HermesProvider, find_binary
 from .ollama import OllamaProvider
 from .openai_compat import OpenAICompatProvider
 
@@ -28,11 +28,12 @@ KINDS = {
     "anthropic": AnthropicProvider,
     "claude_code": ClaudeCodeProvider,
     "codex_cli": CodexProvider,
+    "hermes_cli": HermesProvider,
 }
 
 KIND_LABELS = {
     "ollama": "Ollama", "openai_compat": "OpenAI-compatible", "anthropic": "Claude API",
-    "claude_code": "Claude Code", "codex_cli": "Codex CLI",
+    "claude_code": "Claude Code", "codex_cli": "Codex CLI", "hermes_cli": "Atlas Runtime",
 }
 
 
@@ -99,6 +100,8 @@ class ModelRouter:
             seeds.append(("claude_code", "Claude Code", None, {}))
         if "codex_cli" not in existing and find_binary("codex"):
             seeds.append(("codex_cli", "Codex CLI", None, {}))
+        if "hermes_cli" not in existing and find_binary("hermes"):
+            seeds.append(("hermes_cli", "Atlas Runtime", None, {}))
         for kind, name, url, cfg in seeds:
             self.db.insert("providers", {"id": new_id("prov"), "kind": kind, "name": name, "base_url": url,
                                          "config": cfg, "enabled": 1, "created_at": t, "updated_at": t})
@@ -169,26 +172,31 @@ class ModelRouter:
 
     async def probe(self, provider_id: str, model: str) -> Dict[str, Any]:
         """Verify tool calling + structured output with real requests; never inferred from the model name."""
-        prov = self.get(provider_id)
         caps: Dict[str, Any] = {}
         tool = {"name": "ping", "description": "Return pong. Call this tool when asked to ping.",
                 "parameters": {"type": "object", "properties": {"note": {"type": "string"}}, "required": []}}
-        try:
-            r = await self.chat(provider_id, model, [{"role": "user", "content": "Call the ping tool now."}],
-                                tools=[tool], params={"temperature": 0, "max_tokens": 200}, retries=0)
-            caps["tools"] = any(tc["name"] == "ping" for tc in r.tool_calls)
-            caps["latency_ms"] = round(r.latency_ms)
-        except ProviderError as e:
-            caps["tools"] = False
-            caps["tools_error"] = str(e)[:300]
-        try:
-            r = await self.chat(provider_id, model, [{"role": "user", "content": 'Reply with JSON {"ok": true} only.'}],
-                                params={"temperature": 0, "max_tokens": 50}, json_mode=True, retries=0)
-            import json as _j
-            txt = r.text.strip().strip("`").replace("json\n", "", 1)
-            caps["structured"] = isinstance(_j.loads(txt[txt.find("{"): txt.rfind("}") + 1]), dict)
-        except Exception:  # noqa: BLE001
-            caps["structured"] = False
+
+        async def check_tools():
+            try:
+                r = await self.chat(provider_id, model, [{"role": "user", "content": "Call the ping tool now."}],
+                                    tools=[tool], params={"temperature": 0, "max_tokens": 96}, retries=0)
+                return {"tools": any(tc["name"] == "ping" for tc in r.tool_calls), "latency_ms": round(r.latency_ms)}
+            except ProviderError as e:
+                return {"tools": False, "tools_error": str(e)[:300]}
+
+        async def check_structured():
+            try:
+                r = await self.chat(provider_id, model, [{"role": "user", "content": 'Reply with JSON {"ok": true} only.'}],
+                                    params={"temperature": 0, "max_tokens": 32}, json_mode=True, retries=0)
+                import json as _j
+                txt = r.text.strip().strip("`").replace("json\n", "", 1)
+                return {"structured": isinstance(_j.loads(txt[txt.find("{"): txt.rfind("}") + 1]), dict)}
+            except Exception:  # noqa: BLE001
+                return {"structured": False}
+
+        tool_result, structured_result = await asyncio.gather(check_tools(), check_structured())
+        caps.update(tool_result)
+        caps.update(structured_result)
         caps["streaming"] = True
         caps["probed_at"] = now()
         row = self.db.get("providers", provider_id)

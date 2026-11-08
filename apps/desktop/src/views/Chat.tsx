@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp, Square, Plus, Box, ChevronDown, Check, X, FileText, Users, Bot, ChevronRight,
-  Copy, Pencil, Columns2, Volume2, AlertCircle, Terminal, SlidersHorizontal, ExternalLink, Loader2, Code2, Layers, Sparkles, PanelRight, Cpu,
+  Copy, Pencil, Columns2, Volume2, AlertCircle, SlidersHorizontal, Loader2, Code2, Layers, Sparkles, PanelRight, Cpu, Zap, RotateCcw,
 } from "lucide-react";
 import { Agent, api, Approval, Model, Project, Provider, subscribe, Task, Team, TOKEN, useApi, useConnected } from "../api";
 import { BrandMark, brandFor } from "../components/Brand";
@@ -13,16 +13,17 @@ import { cx, StatusBadge, useAction, useToast } from "../components/ui";
 import { AtlasMark } from "../components/Logo";
 import { AnimatedMark } from "../components/AnimatedMark";
 import { Markdown, PathBase } from "../components/Markdown";
-import { ExecutionViewer } from "../components/Execution";
 import { RunTimeline, summarizeSteps, useRunSteps } from "../components/RunTimeline";
 import { Starfield } from "../components/Starfield";
 import { RunMedia } from "../components/RunMedia";
 
 // ---------------------------------------------------------------- types & config
 export interface ChatConfig {
-  mode?: "model" | "agent" | "team"; provider_id?: string; model?: string; agent_id?: string; team_id?: string;
+  mode?: "model" | "agent" | "team" | "auto_team"; provider_id?: string; model?: string; agent_id?: string; team_id?: string;
+  auto_team?: boolean;
   tools?: string[]; project_id?: string; access_level?: "read_only" | "workspace" | "computer_use";
-  computer_consent_for?: string; system?: string; temperature?: number | null; auto_approve?: boolean;
+  computer_consent_for?: string; system?: string; temperature?: number | null; reasoning_effort?: "low" | "medium" | "high" | "xhigh"; auto_approve?: boolean;
+  compare_models?: { provider_id: string; model: string }[];
 }
 interface ChatMessage {
   id: string; conversation_id: string; role: "user" | "assistant"; content: string;
@@ -33,6 +34,17 @@ interface ConversationFull { id: string; title: string; config: ChatConfig; mess
 const DRAFT_KEY = "atlas_chat_draft_cfg";
 export const loadDraft = (): ChatConfig => { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}"); } catch { return {}; } };
 export const saveDraft = (c: ChatConfig) => localStorage.setItem(DRAFT_KEY, JSON.stringify(c));
+export function clearHermesPlaceholder(cfg: ChatConfig, providers: Provider[]): ChatConfig | undefined {
+  if ((cfg.mode || "model") !== "model") return;
+  const provider = providers.find((p) => p.id === cfg.provider_id);
+  const clearPrimary = cfg.model === "default" && provider?.kind === "hermes_cli";
+  const compare = (cfg.compare_models || []).filter((item) => {
+    const selected = providers.find((p) => p.id === item.provider_id);
+    return !(item.model === "default" && selected?.kind === "hermes_cli");
+  });
+  if (!clearPrimary && compare.length === (cfg.compare_models || []).length) return;
+  return { ...cfg, ...(clearPrimary ? { provider_id: undefined, model: undefined } : {}), compare_models: compare };
+}
 
 const MAX_FILE = 200_000;            // text up to this size goes straight into the prompt
 const MAX_IMAGE = 4 * 1024 * 1024;   // images up to this size are sent to the model as images
@@ -122,11 +134,20 @@ function Chip({ icon, label, onClick, open, disabled, title, iconBox }: {
 // ---------------------------------------------------------------- selectors
 function useHarnessData() {
   const { data: agents = [] } = useApi<Agent[]>("/agents", ["agent"]);
-  const { data: teams = [] } = useApi<Team[]>("/teams", ["team"]);
   const { data: models = [], loading: modelsLoading } = useApi<Model[]>("/models", ["provider", "model"]);
   const { data: providers = [] } = useApi<Provider[]>("/providers", ["provider"]);
   const { data: projects = [] } = useApi<Project[]>("/projects", ["project"]);
-  return { agents, teams, models, modelsLoading, providers, projects };
+  return { agents, models, modelsLoading, providers, projects };
+}
+
+export async function prepareAutoTeamConfig(cfg: ChatConfig, text: string, attachments: Attachment[]): Promise<ChatConfig> {
+  if (cfg.mode !== "auto_team") return cfg;
+  const routing = cfg.provider_id && cfg.model
+    ? { reasoning: { provider_id: cfg.provider_id, model: cfg.model }, coding: { provider_id: cfg.provider_id, model: cfg.model } }
+    : undefined;
+  const need = text || attachments.map((a) => a.name).join(", ") || "Analyze the attached files";
+  const created = await api<Team>("/teams/auto", { body: { need, project_id: cfg.project_id, routing } });
+  return { ...cfg, mode: "team", team_id: created.id, agent_id: undefined, auto_team: true };
 }
 
 function AgentMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => void; h: ReturnType<typeof useHarnessData> }) {
@@ -134,29 +155,24 @@ function AgentMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => v
   const { go } = useStore();
   const mode = cfg.mode || "model";
   const agent = h.agents.find((a) => a.id === cfg.agent_id);
-  const team = h.teams.find((t) => t.id === cfg.team_id);
-  const label = mode === "agent" && agent ? agent.name : mode === "team" && team ? team.name : "";
+  const label = mode === "auto_team" || (mode === "team" && cfg.auto_team) ? "Auto team" : mode === "agent" && agent ? agent.name : mode === "team" ? "Team" : "Solo";
   const pick = (p: ChatConfig) => { set(p); setOpen(false); };
   const agents = h.agents.filter((a) => !a.config?.chat_assistant);
   return (
     <div className="relative">
-      <Chip icon={<Box size={16} strokeWidth={1.6} />} label={label} title="Agent or team" open={open} onClick={() => setOpen((o) => !o)} />
+      <Chip icon={<Box size={16} strokeWidth={1.6} />} label={label} title="Team mode" open={open} onClick={() => setOpen((o) => !o)} />
       <Popover open={open} onClose={() => setOpen(false)} width={320}>
-        <MenuRow active={mode === "model"} onClick={() => pick({ mode: "model", agent_id: undefined, team_id: undefined })} hint="Answer directly with the selected model">No agent</MenuRow>
+        <MenuRow active={mode === "model"} onClick={() => pick({ mode: "model", agent_id: undefined, team_id: undefined, auto_team: false })} hint="Team mode off · answer directly with the selected model">Solo</MenuRow>
+        <MenuRow active={mode === "auto_team"} onClick={() => pick({ mode: "auto_team", agent_id: undefined, team_id: undefined, auto_team: true })}
+          hint="Team mode on · up to two specialists, three tasks, six model steps per specialist">Auto team</MenuRow>
         <MenuLabel>Agents</MenuLabel>
         {agents.length === 0 && <div className="px-2.5 pb-2 text-xs text-ink-3">No agents yet.</div>}
         {agents.map((a) => (
-          <MenuRow key={a.id} active={mode === "agent" && cfg.agent_id === a.id} onClick={() => pick({ mode: "agent", agent_id: a.id, team_id: undefined })}
+          <MenuRow key={a.id} active={mode === "agent" && cfg.agent_id === a.id} onClick={() => pick({ mode: "agent", agent_id: a.id, team_id: undefined, auto_team: false })}
             hint={`${a.role}${a.team_name ? ` · ${a.team_name}` : ""} · ${a.model || "no model"}`}>{a.name}</MenuRow>
         ))}
-        <MenuLabel>Teams</MenuLabel>
-        {h.teams.length === 0 && <div className="px-2.5 pb-2 text-xs text-ink-3">No teams yet.</div>}
-        {h.teams.map((t) => (
-          <MenuRow key={t.id} active={mode === "team" && cfg.team_id === t.id} onClick={() => pick({ mode: "team", team_id: t.id, agent_id: undefined })}
-            hint={`${t.agent_count} agents · the lead plans and delegates`}>{t.name}</MenuRow>
-        ))}
         <div className="h-px bg-line my-1.5" />
-        <MenuRow onClick={() => { setOpen(false); go({ name: "agents" }); }}>Manage agents and teams…</MenuRow>
+        <MenuRow onClick={() => { setOpen(false); go({ name: "agents" }); }}>Manage agents…</MenuRow>
       </Popover>
     </div>
   );
@@ -164,6 +180,49 @@ function AgentMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => v
 
 function ModelMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => void; h: ReturnType<typeof useHarnessData> }) {
   return <ChatModelPicker cfg={cfg} set={set} models={h.models} providers={h.providers} agents={h.agents} loading={h.modelsLoading} />;
+}
+
+const EFFORT = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "xhigh", label: "Extra high" },
+] as const;
+
+function ReasoningControl({ cfg, set, providers }: { cfg: ChatConfig; set: (p: ChatConfig) => void; providers: Provider[] }) {
+  const [open, setOpen] = useState(false);
+  const provider = providers.find((p) => p.id === cfg.provider_id);
+  if ((cfg.mode || "model") !== "model" || !["openai_compat", "hermes_cli"].includes(provider?.kind || "")) return null;
+  const effort = cfg.reasoning_effort || "medium";
+  const selected = EFFORT.findIndex((item) => item.value === effort);
+  const activeIndex = selected < 0 ? 1 : selected;
+  const current = EFFORT[activeIndex];
+  return <div className="relative no-drag">
+    <button type="button" onClick={() => setOpen((v) => !v)} aria-label={`Reasoning effort: ${current.label}`} aria-expanded={open}
+      className="h-8 px-2 rounded-lg flex items-center gap-1.5 text-xs text-ink-2 hover:text-ink hover:bg-hover transition-colors">
+      <Zap size={14} className="text-[var(--accent)]" /><span className="hidden sm:inline">{current.label}</span>
+    </button>
+    {open && <>
+      <button aria-label="Close reasoning settings" className="fixed inset-0 z-30 cursor-default" onClick={() => setOpen(false)} />
+      <div role="dialog" aria-label="Reasoning effort" className="reasoning-popover pop-in absolute z-40 bottom-full right-0 mb-3 w-[min(320px,calc(100vw-32px))] rounded-2xl border border-line-strong bg-surface p-4 shadow-[var(--shadow-lg)]">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div><div className="text-lg font-medium text-[var(--accent)]">{current.label}</div>
+            <div className="text-xs text-ink-2 truncate max-w-[220px]">{cfg.model || "Selected model"}</div></div>
+          <button type="button" onClick={() => set({ reasoning_effort: undefined })} aria-label="Reset reasoning to default" title="Reset to default"
+            className="h-7 w-7 rounded-full flex items-center justify-center text-ink-3 hover:text-ink hover:bg-hover"><RotateCcw size={15} /></button>
+        </div>
+        <div className="relative mx-[15px]">
+          <div className="reasoning-track" aria-hidden="true"><span style={{ width: `${activeIndex * 100 / (EFFORT.length - 1)}%` }} /></div>
+          {EFFORT.map((item, index) => <span key={item.value} aria-hidden="true" className={`reasoning-tick${index <= activeIndex ? " is-active" : ""}`} style={{ left: `${index * 100 / (EFFORT.length - 1)}%` }} />)}
+          <input type="range" min={0} max={EFFORT.length - 1} step={1} value={activeIndex}
+            aria-label="Reasoning effort" aria-valuetext={current.label}
+            onClick={(e) => set({ reasoning_effort: EFFORT[Number((e.currentTarget as HTMLInputElement).value)].value })}
+            onChange={(e) => set({ reasoning_effort: EFFORT[Number(e.target.value)].value })} className="reasoning-slider" />
+        </div>
+        <div className="flex justify-between mt-3 text-[10px] text-ink-3" aria-hidden="true"><span>Low</span><span>Medium</span><span>High</span><span>Extra high</span></div>
+      </div>
+    </>}
+  </div>;
 }
 
 function AccessMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => void; h: ReturnType<typeof useHarnessData> }) {
@@ -174,7 +233,8 @@ function AccessMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => 
   const modelName = agent?.model || cfg.model;
   const model = h.models.find((m) => m.provider_id === provider?.id && m.name === modelName);
   const unsupported = model?.capabilities?.vision === false || model?.capabilities?.tools === false;
-  const computerReady = cfg.mode !== "team" && !!provider && !!modelName && !provider.agentic && !unsupported;
+  const teamMode = cfg.mode === "team" || cfg.mode === "auto_team";
+  const computerReady = !teamMode && !!provider && !!modelName && !provider.agentic && !unsupported;
   const capabilitiesUnverified = model?.capabilities?.vision !== true || model?.capabilities?.tools !== true;
   const consentKey = `${provider?.id || ""}:${modelName || ""}:${provider?.base_url || ""}`;
   // A loopback endpoint can proxy requests to a hosted service. Only the bundled/default Ollama
@@ -209,7 +269,7 @@ function AccessMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => 
       <MenuLabel>Access for this chat</MenuLabel>
       {options.map((o) => <MenuRow key={o.id} active={level === o.id} onClick={() => { set({ access_level: o.id }); setOpen(false); }} hint={o.hint}>{o.label}</MenuRow>)}
       <MenuRow active={level === "computer_use"} disabled={!computerReady} onClick={enableComputerUse}
-        hint={computerReady ? `${capabilitiesUnverified ? "Model support unverified · " : ""}Use Mac screen and input${localProvider ? " · inference stays on this Mac" : " · screens are shared with provider"}; macOS permissions are required` : cfg.mode === "team" ? "Computer Use isn't available for team chats yet." : !provider || !modelName ? "Choose a model first." : provider.agentic ? "CLI model providers aren't supported for Computer Use." : "This model reports that it doesn't support images or tool calls."}>Atlas Computer Use</MenuRow>
+        hint={computerReady ? `${capabilitiesUnverified ? "Model support unverified · " : ""}Use Mac screen and input${localProvider ? " · inference stays on this Mac" : " · screens are shared with provider"}; macOS permissions are required` : teamMode ? "Computer Use isn't available for team chats yet." : !provider || !modelName ? "Choose a model first." : provider.agentic ? "CLI model providers aren't supported for Computer Use." : "This model reports that it doesn't support images or tool calls."}>Atlas Computer Use</MenuRow>
     </Popover>
   </div>;
 }
@@ -232,9 +292,12 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
   const { settings } = useStore();
   const toast = useToast();
   const [text, setText] = useState("");
+  const textRef = useRef(text);
+  textRef.current = text;
   const [att, setAtt] = useState<Attachment[]>([]);
   const uploads = useRef(new Map<string, { xhr?: XMLHttpRequest; cancelled?: boolean }>());
   const [sending, setSending] = useState(false);
+  const [enhancing, setEnhancing] = useState(false);
   const [drag, setDrag] = useState(false);
   const ta = useRef<HTMLTextAreaElement>(null);
   const { settings: appSettings } = useStore();
@@ -303,6 +366,23 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
     if (ok) { setText(""); setAtt([]); }
     ta.current?.focus();
   };
+  const enhance = async () => {
+    const draft = text;
+    const target = cfg.compare_models?.[0] || { provider_id: cfg.provider_id, model: cfg.model };
+    if (!draft.trim() || !target.provider_id || !target.model) return;
+    setEnhancing(true);
+    try {
+      const result = await api<{ prompt: string }>("/prompts/enhance", { body: { ...target, prompt: draft } });
+      if (textRef.current === draft) {
+        setText(result.prompt);
+        toast("Prompt enhanced. Review it before sending.", "ok");
+      } else {
+        toast("Your draft changed while enhancement was running, so it was left untouched.", "info");
+      }
+    } catch (e: any) {
+      toast(e.message || "Could not enhance this prompt.", "bad");
+    } finally { setEnhancing(false); }
+  };
   const uploading = att.some((a) => a.progress != null && a.progress < 1 && !a.upload_id);
   const canSend = (text.trim() || att.length) && !sending && !uploading;
   return (
@@ -354,10 +434,16 @@ export function Composer({ cfg, setCfg, onSend, busy, onStop, big, seed }: {
         <input ref={file} type="file" multiple hidden onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
         <button onClick={() => file.current?.click()} aria-label="Attach files" title="Attach files (up to 2 GB)"
           className="h-8 w-8 rounded-lg flex items-center justify-center text-ink-2 hover:text-ink hover:bg-hover shrink-0"><Plus size={18} strokeWidth={1.6} /></button>
+        <button type="button" onClick={enhance} disabled={!text.trim() || !cfg.model || (cfg.mode || "model") !== "model" || enhancing || sending}
+          aria-label="Enhance prompt" aria-busy={enhancing} title={!cfg.model ? "Choose a model to enhance this prompt" : "Rewrite your draft with clearer details, then review before sending"}
+          className="h-8 px-2 max-[520px]:px-1 rounded-lg flex items-center gap-1.5 max-[520px]:gap-1 text-xs text-ink-2 hover:text-ink hover:bg-hover disabled:opacity-40 disabled:cursor-default shrink-0">
+          <Sparkles size={14} className={enhancing ? "animate-pulse text-[var(--accent)]" : ""} />
+          <span className="max-[520px]:hidden">{enhancing ? "Enhancing…" : "Enhance prompt"}</span>
+        </button>
         <AgentMenu cfg={cfg} set={setCfg} h={h} />
         <AccessMenu cfg={cfg} set={setCfg} h={h} />
         </div>
-        <div className="flex-1 min-w-0 flex items-center justify-end"><ModelMenu cfg={cfg} set={setCfg} h={h} /></div>
+        <div className="flex-1 min-w-0 flex items-center justify-end gap-1"><ReasoningControl cfg={cfg} set={setCfg} providers={h.providers} /><ModelMenu cfg={cfg} set={setCfg} h={h} /></div>
         {busy && !canSend ? (
           <button onClick={onStop} aria-label="Stop" title="Stop  ⌘."
             className="h-8 w-8 rounded-full bg-ink text-[var(--base)] flex items-center justify-center hover:opacity-90 shrink-0"><Square size={13} fill="currentColor" /></button>
@@ -429,7 +515,7 @@ function SubRun({ t }: { t: Task }) {
         <div className="px-3 pb-3">
           {t.error && <div className="mb-2 text-xs text-bad">{t.error}</div>}
           {t.result && <div className="mb-2 text-sm text-ink-2 whitespace-pre-wrap">{t.result.slice(0, 1200)}</div>}
-          <div className="rounded-md border border-line overflow-hidden"><ExecutionViewer taskId={t.id} height={260} showFilters={false} /></div>
+          <div className="mt-2 -ml-1"><RunTimeline taskId={t.id} live={!['completed', 'failed', 'cancelled'].includes(t.status)} /></div>
         </div>
       )}</div></div>
     </div>
@@ -441,7 +527,6 @@ function RunPanel({ taskId, bare }: { taskId: string; bare?: boolean }) {
   const { data: t } = useApi<Task>(`/tasks/${taskId}`, ["task", "approval"]);
   const { data: approvals = [] } = useApi<Approval[]>("/approvals", ["approval", "task"]);
   const [open, setOpen] = useState(true);
-  const [raw, setRaw] = useState(false);
   const [now, setNow] = useState(Date.now() / 1000);
   const { run } = useAction();
   const { steps } = useRunSteps(t && t.kind !== "objective" ? taskId : undefined);
@@ -466,8 +551,6 @@ function RunPanel({ taskId, bare }: { taskId: string; bare?: boolean }) {
         : <div className="-ml-2"><RunTimeline taskId={t.id} live={live} /></div>}
       <RunMedia taskId={t.id} live={live} />
       {t.error && <div className="text-[13px] text-bad">{t.error}</div>}
-      {!isTeam && <button onClick={() => setRaw((v) => !v)} className="text-xs text-ink-3 hover:text-ink">{raw ? "Hide raw log" : "Show raw log"}</button>}
-      {raw && <div className="rounded-xl border border-line overflow-hidden"><ExecutionViewer taskId={t.id} height={300} showFilters={false} /></div>}
     </div>
   );
   if (bare) return <div className="space-y-3">{pending.length > 0 && pending.map((a) => <ApprovalCard key={a.id} a={a} />)}{body}</div>;
@@ -483,8 +566,6 @@ function RunPanel({ taskId, bare }: { taskId: string; bare?: boolean }) {
         {t.config?.access_level === "computer_use" && <span className="shrink-0 rounded-full bg-hover px-2 py-0.5 text-[10px] text-ink-2">Computer Use</span>}
         <span className="flex-1" />
         {live && <button onClick={() => run("c", () => api(`/tasks/${t.id}/cancel`, { body: {} }))} className="shrink-0 text-xs text-ink-3 hover:text-ink">Stop</button>}
-        <button onClick={() => { go({ name: "tasks" }); setTimeout(() => select({ kind: "task", id: t.id }), 0); }} title="Open in Runs" aria-label="Open in Runs"
-          className="shrink-0 h-7 w-7 rounded-md flex items-center justify-center text-ink-3 hover:text-ink hover:bg-hover"><ExternalLink size={13} /></button>
       </div>
       {pending.length > 0 && <div className="space-y-2">{pending.map((a) => <ApprovalCard key={a.id} a={a} />)}</div>}
       <div className={cx("disclose", open && "open")}><div>{open && <div className="chat-disclosure-body">{body}</div>}</div></div>
@@ -603,9 +684,9 @@ function SettingsPopover({ cfg, set, open, onClose }: { cfg: ChatConfig; set: (p
       <div className="p-2 space-y-3">
         <div className="text-sm font-medium text-ink">Chat settings</div>
         <label className="block">
-          <span className="block text-xs text-ink-2 mb-1">System instructions (model chats)</span>
+          <span className="block text-xs text-ink-2 mb-1">Custom instructions</span>
           <textarea value={system} onChange={(e) => setSystem(e.target.value)} onBlur={() => set({ system })} rows={4}
-            placeholder="Default: concise, helpful Atlas assistant."
+            placeholder="Tell Atlas how to respond or what to prioritize."
             className="w-full px-2.5 py-2 rounded-lg bg-base border border-line text-sm text-ink placeholder:text-ink-3 outline-none focus:border-line-strong resize-y" />
         </label>
         <label className="block">
@@ -617,18 +698,6 @@ function SettingsPopover({ cfg, set, open, onClose }: { cfg: ChatConfig; set: (p
         </label>
       </div>
     </Popover>
-  );
-}
-
-function ActivityDrawer({ onClose }: { onClose: () => void }) {
-  return (
-    <aside className="anim-rise w-[380px] max-[1000px]:w-[320px] shrink-0 h-full border-l border-line bg-[var(--sidebar)] flex flex-col fade-in">
-      <div className="drag h-[64px] shrink-0 flex items-center justify-between pl-4 pr-3 pt-2">
-        <span className="text-base font-medium text-ink">Live activity</span>
-        <button onClick={onClose} aria-label="Close activity" className="no-drag h-8 w-8 rounded-md flex items-center justify-center text-ink-2 hover:text-ink hover:bg-hover"><X size={16} /></button>
-      </div>
-      <div className="flex-1 min-h-0 px-3 pb-3"><div className="h-full rounded-xl border border-line overflow-hidden"><ExecutionViewer height="100%" showFilters={false} /></div></div>
-    </aside>
   );
 }
 
@@ -679,10 +748,14 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
   useEffect(() => {
     if (!id && settings?.["onboarding.completed"]) setDraft(loadDraft());
   }, [id, settings?.["onboarding.completed"]]);
+  useEffect(() => {
+    if (id) return;
+    const cleaned = clearHermesPlaceholder(loadDraft(), chatProviders);
+    if (cleaned) { setDraft(cleaned); saveDraft(cleaned); }
+  }, [id, chatProviders, settings?.["onboarding.completed"]]);
   const [live, setLive] = useState<Record<string, string>>({});
   const msgsRef = useRef<ChatMessage[]>([]);
   const online = useConnected();
-  const [drawer, setDrawer] = useState(() => localStorage.getItem("atlas_activity") === "1");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sessionPref, setSession] = useState(() => localStorage.getItem("atlas_session") !== "0");
   const session = sessionPref && !split;
@@ -717,6 +790,34 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
   msgsRef.current = messages;
   const busy = messages.some((m) => m.status === "streaming" || m.status === "running");
   const liveLen = Object.values(live).reduce((a, s) => a + s.length, 0);
+  const renderedMessages: React.ReactNode[] = [];
+  const renderedCompareGroups = new Set<string>();
+  messages.forEach((m, index) => {
+    const groupId = m.data?.compare_group as string | undefined;
+    if (!groupId) {
+      renderedMessages.push(<MessageView key={m.id} m={m} live={live[m.id]} providers={chatProviders} last={index === messages.length - 1} onEdit={onEdit} projectId={cfg.project_id} />);
+      return;
+    }
+    if (renderedCompareGroups.has(groupId)) return;
+    renderedCompareGroups.add(groupId);
+    const responses = messages.filter((item) => item.data?.compare_group === groupId);
+    renderedMessages.push(<div key={groupId} role="group" aria-label={`Responses from ${responses.length} models`} className="grid grid-cols-1 min-[620px]:grid-cols-2 gap-3">
+      {responses.map((response, responseIndex) => {
+        const provider = chatProviders.find((item) => item.id === response.data?.provider_id);
+        const icon = resolveProviderIconKey({ presetId: provider?.config?.preset_id, kind: provider?.kind, baseUrl: provider?.base_url, name: provider?.name });
+        return <article key={response.id} className="min-w-0 rounded-xl border border-line bg-surface/60 p-3.5">
+          <div className="flex items-center gap-2 min-w-0 mb-3 text-xs text-ink-2">
+            <BrandMark model={response.data?.model} fallbackIconKey={icon} label={provider?.name} size={18} />
+            <span className="truncate font-medium text-ink">{response.data?.model}</span>
+            <span className="truncate text-ink-3">{provider?.name || "Provider"}</span>
+            {(response.status === "streaming" || response.status === "running") && <span className="ml-auto shrink-0 text-ink-3">Generating</span>}
+            {response.status === "error" && <span className="ml-auto shrink-0 text-bad">Failed</span>}
+          </div>
+          <MessageView m={response} live={live[response.id]} providers={chatProviders} last={index + responses.length === messages.length && responseIndex === responses.length - 1} projectId={cfg.project_id} />
+        </article>;
+      })}
+    </div>);
+  });
 
   // auto-scroll while the reader is at the bottom
   useEffect(() => { const el = scroller.current; if (el && stick.current) el.scrollTop = el.scrollHeight; }, [messages.length, liveLen, conv?.messages]);
@@ -732,19 +833,23 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
     const mode = cfg.mode || "model";
     if (mode === "model" && (!cfg.provider_id || !cfg.model)) { toast("Choose a model first.", "bad"); return false; }
     try {
+      let sendCfg = cfg;
+      if (mode === "auto_team") {
+        sendCfg = await prepareAutoTeamConfig(cfg, text, attachments);
+        setCfg(sendCfg);
+      }
       let cid = id;
       if (!cid) {
-        const c = await api<{ id: string }>("/conversations", { body: { config: cfg } });
+        const c = await api<{ id: string }>("/conversations", { body: { config: sendCfg } });
         cid = c.id;
       }
       stick.current = true;
-      await api(`/conversations/${cid}/messages`, { body: { content: text, attachments, config: cfg } });
+      await api(`/conversations/${cid}/messages`, { body: { content: text, attachments, config: sendCfg } });
       if (!id) go({ name: "chat", id: cid });
       return true;
     } catch (e: any) { toast(e.message || String(e), "bad"); return false; }
   };
   const stop = () => { if (id && busy) api(`/conversations/${id}/stop`, { body: {} }).catch((e) => toast(e.message, "bad")); };
-  const toggleDrawer = () => setDrawer((d) => { localStorage.setItem("atlas_activity", d ? "0" : "1"); return !d; });
 
   const empty = !id || (conv && messages.length === 0);
   const notFound = id && error;
@@ -760,9 +865,6 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
             className="no-drag h-8 w-8 rounded-md flex items-center justify-center text-ink-2 hover:text-ink hover:bg-hover"><X size={18} strokeWidth={1.6} /></button>}
           {!empty && !split && <button onClick={toggleSession} aria-label="Session details" title="Session details" aria-pressed={session}
             className={cx("no-drag h-8 w-8 rounded-md flex items-center justify-center", session ? "bg-active text-ink" : "text-ink-2 hover:text-ink hover:bg-hover")}><PanelRight size={18} strokeWidth={1.6} /></button>}
-          {!pane && <button onClick={toggleDrawer} aria-label="Live activity" title="Live activity" aria-pressed={drawer}
-            className={cx("no-drag h-8 w-8 rounded-md flex items-center justify-center", drawer ? "bg-active text-ink" : "text-ink-2 hover:text-ink hover:bg-hover")}>
-            <Terminal size={18} strokeWidth={1.6} /></button>}
           <div className="relative">
             <button onClick={() => setSettingsOpen((o) => !o)} aria-label="Chat settings" title="Chat settings" aria-expanded={settingsOpen}
               className={cx("no-drag h-8 w-8 rounded-md flex items-center justify-center", settingsOpen ? "bg-active text-ink" : "text-ink-2 hover:text-ink hover:bg-hover")}>
@@ -801,7 +903,7 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
             <div ref={scroller} onScroll={onScroll} className="flex-1 overflow-y-auto">
               <div className={cx("mx-auto px-6 pt-[88px] pb-16 flex flex-col gap-9", wide ? "max-w-[1000px]" : "max-w-[768px]")}>
                 {!conv && <div className="flex justify-center py-16"><Loader2 size={18} className="animate-spin text-ink-3" /></div>}
-                {messages.map((m, i) => <MessageView key={m.id} m={m} live={live[m.id]} providers={chatProviders} last={i === messages.length - 1} onEdit={onEdit} projectId={cfg.project_id} />)}
+                {renderedMessages}
               </div>
             </div>
             <div className="shrink-0 px-6 pb-5 pt-1 chat-composer-dock">
@@ -816,7 +918,6 @@ function ChatInner({ id, split, pane, canSplit, onSplit, onOpen, onClose }: {
         )}
       </div>
       {session && !empty && !notFound && <SessionPanel messages={messages} cfg={cfg} onClose={toggleSession} />}
-      {drawer && !split && <ActivityDrawer onClose={toggleDrawer} />}
     </div>
   );
 }

@@ -30,7 +30,7 @@ function PathLink({ path, children, code }: { path: string; children: React.Reac
 function inline(text: string, key = 0): React.ReactNode[] {
   const out: React.ReactNode[] = [];
   // Bold/italic may wrap across soft line breaks inside one paragraph; links to files open them on this Mac.
-  const re = /(`[^`\n]+`)|(\*\*[^*]+?\*\*)|(\*[^*\s][^*]*?\*|\b_[^_\n]+_\b)|(\[[^\]\n]+\]\(([^)\s]+)\))/g;
+  const re = /(`[^`\n]+`)|(\*\*[^*]+?\*\*)|(\*[^*\s][^*]*?\*|\b_[^_\n]+_\b)|(\[[^\]\n]+\]\(([^)\s]+)\))|(https?:\/\/[^\s<>()]+)/g;
   const push = (s: string) => s.split("\n").forEach((part, j) => { if (j) out.push(<br key={`${key}-br${i++}`} />); if (part) out.push(part); });
   let last = 0, m: RegExpExecArray | null, i = 0;
   while ((m = re.exec(text))) {
@@ -43,6 +43,11 @@ function inline(text: string, key = 0): React.ReactNode[] {
     else if (m[4] && /^(mailto:|#)/.test(m[5])) out.push(t.slice(1, t.indexOf("]")));
     else if (m[4] && !/^https?:\/\//.test(m[5])) out.push(<PathLink key={k} path={decodeURI(m[5])}>{t.slice(1, t.indexOf("]"))}</PathLink>);
     else if (m[4]) { const url = m[5]; out.push(<a key={k} href={url} title={url} onClick={(e) => { e.preventDefault(); openExternal(url); }}>{t.slice(1, t.indexOf("]"))}</a>); }
+    else if (m[6]) {
+      const url = m[6].replace(/[.,!?;:]+$/, "");
+      const suffix = m[6].slice(url.length);
+      out.push(<React.Fragment key={k}><a href={url} title={url} onClick={(e) => { e.preventDefault(); openExternal(url); }}>{url}</a>{suffix}</React.Fragment>);
+    }
     last = m.index + t.length;
   }
   if (last < text.length) push(text.slice(last));
@@ -65,7 +70,16 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
 }
 
 export function Markdown({ text }: { text: string }) {
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  // Some providers occasionally return their internal DSML tool protocol as
+  // plain text. Hide the call and wrapper tokens, including in saved replies.
+  const invoke = /<[^<>]*\binvoke\s+name="[^"]+"[^>]*>[\s\S]*?<\/[^<>]*\binvoke\s*>/gi;
+  const wrappers = /<\/?[^<>]*\b(?:function_)?calls\s*>/gi;
+  const cleaned = text.replace(invoke, "").replace(/<invoke\b[\s\S]*$/i, "")
+    .replace(wrappers, "").replace(/<\|(?:dsml|im_start|im_sep|invoke|function_call)[^|]*(?:\|>|$)/gi, "").trim();
+  const visible = cleaned || (/DSML|<\|(?:invoke|function_calls)/i.test(text)
+    ? "The model returned a tool command Atlas couldn’t interpret. Try again or choose another model."
+    : text);
+  const lines = visible.replace(/\r\n/g, "\n").split("\n");
   const blocks: React.ReactNode[] = [];
   let i = 0, k = 0;
   while (i < lines.length) {

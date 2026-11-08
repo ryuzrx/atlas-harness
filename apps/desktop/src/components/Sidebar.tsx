@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { MessageSquare, FolderKanban, FolderPlus, Folder, FolderGit2, Sparkles, Layers, Play, SquarePlus, Plus, Search, Settings, MoreHorizontal, PanelLeftClose, PanelLeftOpen, ChevronRight, ChevronsUpDown, X } from "lucide-react";
+import { MessageSquare, FolderKanban, FolderPlus, Folder, FolderGit2, Sparkles, Layers, Clock3, Puzzle, SquarePlus, Plus, Search, Settings, MoreHorizontal, PanelLeftClose, PanelLeftOpen, ChevronRight, ChevronsUpDown, X } from "lucide-react";
 import { api, Project, useApi } from "../api";
 import { useAddProject } from "./useAddProject";
 import { Mode, RouteName, useStore } from "../store";
@@ -18,9 +18,10 @@ export function WorkingSpinner({ className }: { className?: string }) {
 export interface Conversation { id: string; title: string; updated_at: number; created_at: number; config: Record<string, any>; busy?: number }
 
 const NAV: { id: RouteName; label: string; icon: React.ElementType; match: RouteName[] }[] = [
-  { id: "agents", label: "Agents", icon: Sparkles, match: ["agents", "teams", "team"] },
+  { id: "agents", label: "Agents", icon: Sparkles, match: ["agents"] },
   { id: "models", label: "Models", icon: Layers, match: ["models"] },
-  { id: "tasks", label: "Runs", icon: Play, match: ["tasks", "activity"] },
+  { id: "automations", label: "Automations", icon: Clock3, match: ["automations"] },
+  { id: "customizations", label: "Customizations", icon: Puzzle, match: ["customizations"] },
 ];
 
 function NavItem({ active, collapsed, icon: Icon, label, onClick, badge }: {
@@ -281,7 +282,7 @@ function ProjectList() {
   );
 }
 
-export function Sidebar({ pending, user }: { pending: number; user?: string }) {
+export function Sidebar({ user }: { user?: string }) {
   const { route, go, mode, settingsOpen, sidebarCollapsed: collapsed, toggleSidebar } = useStore();
   const name = user || "you";
   return (
@@ -305,7 +306,7 @@ export function Sidebar({ pending, user }: { pending: number; user?: string }) {
       <ModeSwitch collapsed={collapsed} />
       <nav aria-label="Primary" className={cx("shrink-0 flex flex-col gap-1 px-3 pt-5 pb-4")}>
         {NAV.map((n) => <NavItem key={n.id} active={n.match.includes(route.name)} collapsed={collapsed} icon={n.icon} label={n.label}
-          badge={n.id === "tasks" ? pending : undefined} onClick={() => go({ name: n.id })} />)}
+          onClick={() => go({ name: n.id })} />)}
       </nav>
       <div id="atlas-sidebar-content" className={cx("min-h-0 flex-1 flex flex-col", !collapsed && "mx-3 pt-2")}>
         {!collapsed && <div className="sidebar-label min-h-0 flex-1 flex flex-col">{mode === "chat" ? <ChatHistory /> : <ProjectList />}</div>}

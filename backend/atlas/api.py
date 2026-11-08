@@ -385,6 +385,43 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
         except ProviderError as e:
             err(e, 502)
 
+    @app.post("/api/prompts/enhance")
+    async def enhance_prompt(body: Dict[str, Any] = Body(...)):
+        """Rewrite a draft prompt using the selected model without adding it to chat history."""
+        prompt = str(body.get("prompt") or "").strip()
+        provider_id = str(body.get("provider_id") or "")
+        model = str(body.get("model") or "")
+        if not prompt:
+            raise HTTPException(400, "Write a prompt first.")
+        if len(prompt) > 30_000:
+            raise HTTPException(400, "Prompt is too long to enhance. Try a shorter draft.")
+        if not provider_id or not model:
+            raise HTTPException(400, "Choose a model before enhancing the prompt.")
+        system = (
+            "Rewrite the user's draft as a clear, useful prompt they can paste into an AI chat. "
+            "Preserve the user's intent, facts, names, scope, constraints, and tone. Do not answer the request. "
+            "Do not invent requirements, facts, tools, or success criteria. Clarify the desired outcome and "
+            "organize context, constraints, deliverables, and verification only where the draft supports them. "
+            "Keep it appropriately thorough without adding filler. If the draft is already clear, make only "
+            "small improvements. Return only the revised prompt, with no preamble or explanation."
+        )
+        try:
+            result = await asyncio.wait_for(S.router.chat(
+                provider_id, model,
+                [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+                retries=0, params={"temperature": 0.25, "max_tokens": 1400},
+            ), timeout=65)
+        except asyncio.TimeoutError:
+            raise HTTPException(504, "Prompt enhancement timed out. Try again.")
+        except ProviderError as e:
+            err(e, 502)
+        revised = (result.text or "").strip()
+        if revised.startswith("```") and revised.endswith("```"):
+            revised = re.sub(r"^```[A-Za-z0-9_-]*\s*|\s*```$", "", revised).strip()
+        if not revised:
+            raise HTTPException(502, "The selected model returned an empty rewrite. Try again.")
+        return {"prompt": revised, "provider_id": provider_id, "model": model}
+
     @app.get("/api/models")
     async def models():
         rows = await S.router.models()
@@ -594,7 +631,13 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
                               "created_at": t, "updated_at": t})
         available: Optional[List[Dict[str, Any]]] = None
         lead_id = None
-        for spec in (tpl["agents"] if tpl else []):
+        specs = body.get("auto_specs") if body.get("auto_team") else (tpl["agents"] if tpl else [])
+        specs = specs or []
+        if body.get("auto_team") and tpl:
+            # Auto teams keep the lead and at most two specialists to bound model usage.
+            lead = next((spec for spec in specs if spec.get("lead")), None)
+            specs = ([lead] if lead else []) + [spec for spec in specs if not spec.get("lead")][:2]
+        for spec in specs:
             route = (body.get("routing") or {}).get(spec["tier"]) or ({} if body.get("auto_assign_models") else routing_for(spec["tier"]))
             if not (route.get("provider_id") and route.get("model")):
                 if available is None:
@@ -607,8 +650,9 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
                                    "instructions": spec["instructions"], "provider_id": route.get("provider_id"),
                                    "model": route.get("model"), "tools": spec["tools"],
                                    "params": {"temperature": S.db.setting("agents.default_temperature")},
-                                   "config": {"tier": spec["tier"], "context_budget": S.db.setting("agents.default_context_budget"),
-                                              "max_parallel": 1},
+                                   "config": {"tier": spec["tier"], "context_budget": min(int(S.db.setting("agents.default_context_budget") or 16000), 8192)
+                                              if body.get("auto_team") else S.db.setting("agents.default_context_budget"),
+                                              "max_parallel": 1, **({"max_steps": 6} if body.get("auto_team") else {})},
                                    "created_at": t, "updated_at": t})
             if spec.get("lead"):
                 lead_id = aid
@@ -617,6 +661,30 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
         S.db.audit("user", "team_create", {"id": tid, "template": body.get("template")})
         S.bus.changed("team", tid)
         return team_view(S.db.get("teams", tid))
+
+    @app.post("/api/teams/auto")
+    async def create_auto_team(body: Dict[str, Any] = Body(...)):
+        need = str(body.get("need") or "").strip()[:1500]
+        if not need:
+            raise HTTPException(400, "Describe what you want the team to do.")
+        # Keyword routing is local and free; team planning remains the only extra model call.
+        template_ids = team_advisor.heuristic(need)[:2]
+        template = template_ids[0]
+        lead = next((spec for spec in TEMPLATES[template]["agents"] if spec.get("lead")), None)
+        specialists = []
+        for template_id in template_ids:
+            specialist = next((spec for spec in TEMPLATES[template_id]["agents"] if not spec.get("lead")), None)
+            if specialist and specialist["role"] not in {item["role"] for item in specialists}:
+                specialists.append(specialist)
+        if len(template_ids) == 1:
+            specialists.extend(spec for spec in TEMPLATES[template]["agents"]
+                               if not spec.get("lead") and spec["role"] not in {item["role"] for item in specialists})
+        specs = ([lead] if lead else []) + specialists[:2]
+        return await create_team({"template": template, "name": f"Auto · {TEMPLATES[template]['name']}",
+                                  "project_id": body.get("project_id"), "auto_assign_models": True,
+                                  "routing": body.get("routing") or {},
+                                  "auto_specs": specs,
+                                  "auto_team": True})
 
     @app.get("/api/teams/{tid}")
     async def get_team(tid: str):

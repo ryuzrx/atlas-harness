@@ -20,7 +20,7 @@ from .config import data_dir
 from .security import scrubbed_env, shell_argv
 
 MAX_SKILL_BYTES = 200_000
-MAX_SKILLS = 200
+MAX_SKILLS = 800
 HOOK_EVENTS = ("PreToolUse", "PostToolUse")
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
@@ -336,6 +336,8 @@ def list_packs(settings: Dict[str, Any]) -> List[Dict[str, Any]]:
         for s in _scan_skills(d, "pack"):
             skills.append({"name": s["folder"], "description": s["description"], "installed": s["folder"] in have})
         out.append({"id": meta.get("id") or d.name, "name": meta.get("name") or d.name, "description": meta.get("description") or "",
+                    "source_repo": meta.get("source_repo"), "source_revision": meta.get("source_revision"),
+                    "source_url": meta.get("source_url"), "license": meta.get("license"),
                     "skills": skills, "installed": sum(1 for s in skills if s["installed"])})
     return out
 
@@ -347,12 +349,26 @@ def install_pack(settings: Dict[str, Any], pack_id: str, names: Optional[List[st
     dest = folder(settings, "skills")
     dest.mkdir(parents=True, exist_ok=True)
     added = skipped = 0
+    meta = _read_json(src / "pack.json")
+    upstream_license = src / "LICENSE"
     for d in sorted(src.iterdir()):
         if not (d.is_dir() and (d / "SKILL.md").is_file()) or (names is not None and d.name not in names):
             continue
         if (dest / d.name).exists():
             skipped += 1
             continue
-        _safe_copy(d, dest / d.name)
+        target = dest / d.name
+        _safe_copy(d, target)
+        for f in target.rglob("*"):
+            if f.is_file():
+                f.chmod(0o644)
+        if meta.get("source_repo"):
+            if upstream_license.is_file():
+                shutil.copyfile(upstream_license, target / "ATLAS_UPSTREAM_LICENSE.txt")
+            (target / ".atlas-source.json").write_text(json.dumps({
+                "repository": meta["source_repo"], "revision": meta.get("source_revision"),
+                "url": meta.get("source_url"), "license": meta.get("license"),
+                "skill": d.name,
+            }, indent=2), encoding="utf-8")
         added += 1
     return {"added": added, "skipped": skipped}

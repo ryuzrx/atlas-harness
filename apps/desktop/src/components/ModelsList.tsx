@@ -71,19 +71,21 @@ export function ModelsList({ models, failed, providers, loading, onTest, reload,
   models: Model[]; failed: Model[]; providers: Provider[]; loading: boolean; onTest: (m: Model) => void; reload: () => void; onGoEndpoints: () => void;
 }) {
   const { settings } = useStore();
+  const visibleModels = useMemo(() => models.filter((m) => !(m.name === "default" &&
+    (m.provider_kind === "hermes_cli" || providers.some((p) => p.id === m.provider_id && p.kind === "hermes_cli")))), [models, providers]);
   const [q, setQ] = useState("");
   const [prov, setProv] = useState("all");
   const [status, setStatus] = useState("all");
   const [sort, setSort] = useState<"name" | "size" | "context">(() => (["size", "context"].includes(settings?.["models.default_sort"]) ? settings!["models.default_sort"] : "name"));
   const [open, setOpen] = useState<string | null>(null);
-  const states = useMemo(() => Array.from(new Set(models.map((m) => m.state))), [models]);
+  const states = useMemo(() => Array.from(new Set(visibleModels.map((m) => m.state))), [visibleModels]);
   const shown = useMemo(() => {
     const s = q.toLowerCase();
-    const list = models.filter((m) => (prov === "all" || m.provider_id === prov) && (status === "all" || m.state === status) &&
-      (!s || `${m.name} ${m.provider_name}`.toLowerCase().includes(s)));
+    const list = visibleModels.filter((m) => (prov === "all" || m.provider_id === prov) && (status === "all" || m.state === status) &&
+      (!s || `${m.name} ${m.provider_name} ${m.details?.display_name || ""}`.toLowerCase().includes(s)));
     const key = (m: Model) => (sort === "size" ? m.size_bytes || 0 : sort === "context" ? m.context_length || 0 : 0);
     return list.sort((a, b) => (sort === "name" ? (a.name || "").localeCompare(b.name || "") : key(b) - key(a)));
-  }, [models, q, prov, status, sort]);
+  }, [visibleModels, q, prov, status, sort]);
   const filtered = q || prov !== "all" || status !== "all";
 
   return (
@@ -91,7 +93,7 @@ export function ModelsList({ models, failed, providers, loading, onTest, reload,
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <div className="relative">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${models.length} models`} aria-label="Search models"
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${visibleModels.length} models`} aria-label="Search models"
             className="h-9 w-[280px] max-[760px]:w-full pl-8 pr-2.5 rounded-md bg-surface border border-line text-sm text-ink placeholder:text-ink-3 outline-none focus:border-line-strong" />
         </div>
         {providers.length > 1 && <Select value={prov} onChange={(e) => setProv(e.target.value)} aria-label="Filter by provider" className="!w-[160px] !h-9"><option value="all">All providers</option>{providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>}
@@ -111,8 +113,10 @@ export function ModelsList({ models, failed, providers, loading, onTest, reload,
             </div>))}
         </div>)}
 
-      {!loading && models.length === 0 ? (
-        <div className="rounded-lg border border-line bg-surface"><Empty title="No models yet" body={failed.length ? "Every connected endpoint is unreachable right now." : "Download a model with Ollama or connect an endpoint."}
+      {!loading && visibleModels.length === 0 ? (
+        <div className="rounded-lg border border-line bg-surface"><Empty title="No models yet" body={visibleModels.length === 0 && models.some((m) => m.provider_kind === "hermes_cli")
+          ? "Hermes uses its configured model, which isn’t listed as a selectable model here."
+          : failed.length ? "Every connected endpoint is unreachable right now." : "Download a model with Ollama or connect an endpoint."}
           action={<Button onClick={onGoEndpoints}>Open endpoints</Button>} /></div>
       ) : shown.length === 0 ? (
         <div className="rounded-lg border border-line bg-surface"><Empty title="No matching models" body={filtered ? "Nothing matches the current search and filters." : undefined}

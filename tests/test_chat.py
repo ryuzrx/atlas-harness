@@ -66,6 +66,45 @@ def test_model_chat_history_search_rename_delete_and_persistence(data_dir):
         assert c.get(f"/api/conversations/{cid}", headers=H).status_code == 404
 
 
+def test_prompt_enhancer_uses_selected_model_without_creating_chat_history():
+    with client({"Rewrite the user's draft": ["Fix the startup issue, then summarize the changes and verification."]}) as c:
+        prov = c.post("/api/providers", json={"kind": "scripted", "name": "Scripted"}, headers=H).json()
+        result = c.post("/api/prompts/enhance", json={
+            "provider_id": prov["id"], "model": "scripted", "prompt": "fix startup and explain"
+        }, headers=H)
+        assert result.status_code == 200, result.text
+        assert result.json()["prompt"] == "Fix the startup issue, then summarize the changes and verification."
+        assert c.get("/api/conversations", headers=H).json() == []
+
+
+def test_model_chat_compares_selected_models_in_parallel():
+    with client({"You are Atlas": ["First model response.", "Second model response."]}) as c:
+        first = c.post("/api/providers", json={"kind": "scripted", "name": "First"}, headers=H).json()
+        second = c.post("/api/providers", json={"kind": "scripted", "name": "Second"}, headers=H).json()
+        conv = c.post("/api/conversations", json={}, headers=H).json()
+        selected = [
+            {"provider_id": first["id"], "model": "scripted"},
+            {"provider_id": second["id"], "model": "scripted"},
+        ]
+        result = c.post(f"/api/conversations/{conv['id']}/messages", json={
+            "content": "Compare these answers", "config": {"mode": "model", "provider_id": first["id"],
+            "model": "scripted", "compare_models": selected}
+        }, headers=H)
+        assert result.status_code == 200, result.text
+        assert len(result.json()["assistants"]) == 2
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            full = c.get(f"/api/conversations/{conv['id']}", headers=H).json()
+            responses = [m for m in full["messages"] if m["role"] == "assistant"]
+            if len(responses) == 2 and all(m["status"] == "done" for m in responses):
+                break
+            time.sleep(0.05)
+        assert len(responses) == 2 and all(m["status"] == "done" for m in responses)
+        assert {m["content"] for m in responses} == {"First model response.", "Second model response."}
+        assert len({m["data"]["compare_group"] for m in responses}) == 1
+        assert {m["data"]["provider_id"] for m in responses} == {first["id"], second["id"]}
+
+
 def test_model_with_tools_runs_as_agent_and_tool_limit_is_enforced(repo):
     script = {"General assistant": [("write_file", {"path": "calc.py", "content": "hacked\n"}),
                                     ("finish", {"summary": "Could not write; read-only access."})]}

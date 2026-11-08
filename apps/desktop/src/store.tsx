@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { api, notify, subscribe, useApi } from "./api";
 import { paletteTokens, resolvePalette } from "./theme";
 
-export type RouteName = "chat" | "overview" | "teams" | "team" | "agents" | "tasks" | "projects" | "models" | "activity" | "settings";
+export type RouteName = "chat" | "overview" | "teams" | "team" | "agents" | "tasks" | "projects" | "models" | "activity" | "automations" | "customizations" | "settings";
 export interface Route { name: RouteName; id?: string; tab?: string }
 export interface Selection { kind: "agent" | "task"; id: string }
 
@@ -31,7 +31,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (deep) return deep.name === "settings" ? { name: "chat" } : deep;
     try {
       const r = JSON.parse(localStorage.getItem("atlas_route") || '{"name":"chat"}');
-      if (!r || !ROUTES.includes(r.name) || (r.id !== undefined && typeof r.id !== "string")) return { name: "chat" };
+      if (!r || !ROUTES.includes(r.name) || (["teams", "team", "tasks"].includes(r.name)) || (r.id !== undefined && typeof r.id !== "string")) return { name: "chat" };
       return r.name === "overview" || r.name === "settings" ? { name: "chat" } : r;
     } catch {
       return { name: "chat" };
@@ -88,7 +88,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const go = (r0: Route) => {
     if (r0.name === "settings") { setSettingsOpen(true); return; }
     setSettingsOpen(false);
-    const r: Route = r0.name === "overview" ? { name: "chat" } : r0; setHistory((h) => [...h.slice(-20), route]); setRoute(r); select(null); localStorage.setItem("atlas_route", JSON.stringify(r)); };
+    const r: Route = ["overview", "teams", "team", "tasks"].includes(r0.name) ? { name: "chat" } : r0; setHistory((h) => [...h.slice(-20), route]); setRoute(r); select(null); localStorage.setItem("atlas_route", JSON.stringify(r)); };
   const back = () => setHistory((h) => { const prev = h[h.length - 1]; if (prev) setRoute(prev); return h.slice(0, -1); });
   const toggleSidebar = () => setCollapsed((c) => { localStorage.setItem("atlas_sidebar", c ? "0" : "1"); return !c; });
   const settingsQueue = useRef<Promise<void>>(Promise.resolve());
@@ -150,10 +150,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
-const ROUTES: RouteName[] = ["chat", "overview", "teams", "team", "agents", "tasks", "projects", "models", "activity", "settings"];
+const ROUTES: RouteName[] = ["chat", "overview", "teams", "team", "agents", "tasks", "projects", "models", "activity", "automations", "customizations", "settings"];
 function parseHash(): Route | null {
   const m = location.hash.match(/^#\/([a-z]+)(?:\/([\w-]+))?/);
   if (!m || !ROUTES.includes(m[1] as RouteName)) return null;
+  if (["teams", "team", "tasks"].includes(m[1])) return { name: "chat" };
   return { name: (m[1] === "overview" ? "chat" : m[1]) as RouteName, id: m[2] };
 }
 

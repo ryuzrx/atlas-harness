@@ -22,11 +22,11 @@ export interface Preset {
 export const CATEGORIES: { id: Preset["category"]; label: string; icon: React.ElementType; blurb: string }[] = [
   { id: "local", label: "On this Mac", icon: Cpu, blurb: "Private and free. Nothing leaves your computer." },
   { id: "cloud", label: "Cloud API", icon: Cloud, blurb: "Your own API key, stored in the macOS Keychain." },
-  { id: "cli", label: "Agent CLI", icon: TerminalSquare, blurb: "Claude Code or Codex with your existing sign-in." },
+  { id: "cli", label: "Agent runtime", icon: TerminalSquare, blurb: "Atlas Runtime, Claude Code, or Codex with your existing sign-in." },
 ];
 
 const ICON_ALIASES: Record<string, string> = {
-  openai: "openai", chatgpt: "openai", codex: "openai", codex_cli: "openai", codex_oss: "openai",
+  openai: "openai", chatgpt: "openai", codex: "openai", codex_cli: "openai", codex_oss: "openai", hermes_cli: "atlas", atlas_runtime: "atlas",
   anthropic: "anthropic", claude: "anthropic", claude_code: "claudecode", claudecode: "claudecode",
   google: "gemini", gemini: "gemini", openrouter: "openrouter", groq: "groq", deepseek: "deepseek",
   mistral: "mistral", mistralai: "mistral", xai: "xai", together: "together", togetherai: "together",
@@ -99,7 +99,7 @@ export function ConnectForm({ preset: p, onConnected, compact, verifyBeforeConne
   const { busy, run } = useAction();
   useEffect(() => { setUrl(p.base_url || ""); setName(""); setKey(""); setModels(""); setBinary(""); setTest(null); }, [p.id]);
   useEffect(() => { setTest(null); }, [url, key, binary]);
-  const cli = p.kind === "claude_code" || p.kind === "codex_cli";
+  const cli = p.kind === "hermes_cli" || p.kind === "claude_code" || p.kind === "codex_cli";
   const body = () => {
     const config: any = { ...(p.config || {}) };
     if (models.trim()) {
@@ -160,12 +160,12 @@ export function ConnectForm({ preset: p, onConnected, compact, verifyBeforeConne
       )}
       {!compact && (cli || p.kind === "openai_compat") && (
         <Field label={cli ? "Model names / aliases (optional)" : "Extra model IDs (optional)"}
-          hint={p.kind === "claude_code" ? "Defaults: opus, sonnet, haiku." : p.kind === "codex_cli" ? "Leave empty to use your Codex default model." : "Only needed for servers that don't list their models."}>
+          hint={p.kind === "hermes_cli" ? "Leave empty to use the model configured in Atlas Runtime." : p.kind === "claude_code" ? "Defaults: opus, sonnet, haiku." : p.kind === "codex_cli" ? "Leave empty to use your Codex default model." : "Only needed for servers that don't list their models."}>
           <Input value={models} onChange={(e) => setModels(e.target.value)} placeholder="comma separated" /></Field>
       )}
       {!compact && cli && (
         <Field label="CLI path (optional)" hint="Found automatically in PATH, ~/.local/bin, Homebrew and npm global folders.">
-          <Input value={binary} onChange={(e) => setBinary(e.target.value)} placeholder={p.kind === "claude_code" ? "~/.local/bin/claude" : "/opt/homebrew/bin/codex"} /></Field>
+          <Input value={binary} onChange={(e) => setBinary(e.target.value)} placeholder={p.kind === "hermes_cli" ? "~/.local/bin/hermes" : p.kind === "claude_code" ? "~/.local/bin/claude" : "/opt/homebrew/bin/codex"} /></Field>
       )}
 
       {test && (

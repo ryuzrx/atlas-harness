@@ -182,6 +182,7 @@ class AgentRunner:
         msgs: List[Dict[str, Any]] = [{"role": "system", "content": system}, {"role": "user", "content": task_prompt}]
         params = dict(agent.get("params") or {})
         budget = int((agent.get("config") or {}).get("context_budget") or 16000)
+        max_steps = max(0, min(int(max_steps or (agent.get("config") or {}).get("max_steps") or 0), 100))
         params.setdefault("num_ctx", min(max(budget + 4096, 8192), 131072))
         await emit("agent_started", {"model": model, "provider": prov.name, "provider_kind": prov.kind, "tool_mode": mode,
                                       "context_budget": budget})
@@ -232,7 +233,12 @@ class AgentRunner:
                     msgs.append({"role": "user", "content": "No tool call detected. Continue working with the tools, or call "
                                                             "`finish` with a summary if the task is complete."})
                     continue
-                return {"status": "completed", "summary": visible or res.text, "verification": "", "steps": step,
+                # Never fall back to the provider's raw text here: it may contain an
+                # unparsed tool protocol (for example DSML control tokens), which
+                # strip_tool_markup deliberately removed from the visible reply.
+                summary = visible or "The model returned tool instructions Atlas could not interpret. Try again or choose another model."
+                status = "completed" if visible else "failed"
+                return {"status": status, "summary": summary, "verification": "", "steps": step,
                         "usage": usage_total, "note": "Agent ended without calling finish."}
             for call in calls:
                 shown_args = _short_args(call["arguments"])
@@ -258,6 +264,10 @@ class AgentRunner:
                               "messages": len(msgs)})
             if ctx.finished:
                 return {**ctx.finished, "steps": step, "usage": usage_total}
+            if max_steps and step >= max_steps:
+                await emit("error", {"message": f"Agent reached its {max_steps}-step usage cap."})
+                return {"status": "failed", "summary": f"Stopped after {max_steps} model steps to stay within the automatic team usage cap.",
+                        "verification": "", "steps": step, "usage": usage_total}
 
 
 def _short_args(args: Dict[str, Any]) -> Dict[str, Any]:

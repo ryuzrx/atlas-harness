@@ -108,7 +108,11 @@ function SimpleConnect({ item, busy, onCancel, onConnect }: { item: PopularInteg
     <Modal open onClose={() => !busy && onCancel()} title={`Connect ${item.name}`} width={480}
       footer={<><Button variant="ghost" onClick={onCancel} disabled={busy}>Cancel</Button><Button variant="primary" busy={busy} disabled={!ready} onClick={() => onConnect(values)}>Connect</Button></>}>
       <div className="space-y-4">
-        <p className="text-base text-ink-2">{item.description}. Atlas will always ask before it uses {item.name}.</p>
+        <div className="flex items-center gap-3 rounded-lg border border-line bg-surface p-3">
+          <IntegrationMark server={item} size={40} />
+          <div><div className="text-sm font-medium text-ink">{item.name}</div><div className="text-xs text-ink-2">{item.description}</div></div>
+        </div>
+        <p className="text-sm leading-relaxed text-ink-2">{fields.length ? "Add the access details below to connect your account." : "This integration is ready to add."} Atlas saves these settings on this Mac and starts the integration only when needed. You’ll be asked before Atlas uses its tools.</p>
         {fields.map((f, i) => (
           <Field key={i} label={f.label} hint={<>{f.help}{f.link && <>{f.help ? " " : ""}<button type="button" className="underline underline-offset-2 hover:text-ink" onClick={() => openExternal(f.link!)}>Get one here</button></>}</>}>
             {f.kind === "folder" ? (
@@ -116,7 +120,7 @@ function SimpleConnect({ item, busy, onCancel, onConnect }: { item: PopularInteg
                 <div className="flex-1 min-w-0 h-9 px-3 rounded-md border border-line flex items-center text-sm text-ink-2 truncate">{values[i] || "No folder chosen"}</div>
                 <Button icon={<FolderOpen size={14} />} onClick={async () => { const p = await pickFolder({ prompt: "Use Folder" }); if (p) set(i, p); }}>Choose…</Button>
               </div>
-            ) : <Input autoFocus={i === 0} type={f.kind === "secret" ? "password" : "text"} autoComplete="off" value={values[i] || ""} placeholder={f.placeholder} onChange={(e) => set(i, e.target.value)} />}
+            ) : <Input autoFocus={i === 0} type={f.kind === "secret" ? "password" : "text"} autoComplete="off" value={values[i] || ""} placeholder={f.placeholder || (f.kind === "secret" ? "Paste your access token" : "Enter value")} onChange={(e) => set(i, e.target.value)} />}
           </Field>))}
       </div>
     </Modal>
@@ -139,7 +143,7 @@ export function McpIntegrations({ servers, status, saving, onSave }: {
     const args = [...item.args]; const env: Record<string, string> = { ...(item.env || {}) };
     (item.setup || []).forEach((f, i) => { const v = (values[i] || "").trim(); if (f.env) env[f.env] = v; else if (f.kind === "folder" || f.kind === "text") { if (item.name === "Filesystem" || item.name === "Postgres") args[args.length - 1] = v; } });
     setConnectBusy(true);
-    try { await onSave([...servers, { name: item.name.replace(/\s+/g, ""), command: item.command, args, env, enabled: true }]); toast(`${item.name} connected`, "ok"); setConnecting(null); }
+    try { await onSave([...servers, { name: item.name.replace(/\s+/g, ""), command: item.command, args, env, enabled: true }]); toast(`${item.name} added. Atlas will start it when needed.`, "ok"); setConnecting(null); }
     catch (e: any) { toast(e.message || String(e), "bad"); } finally { setConnectBusy(false); }
   };
   const pickItem = (item: PopularIntegration) => ((item.setup || []).length ? setConnecting(item) : connect(item, []));
@@ -211,7 +215,7 @@ export function McpIntegrations({ servers, status, saving, onSave }: {
     <div>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="max-w-[420px] text-base leading-[20px] text-ink-2">Connect the apps you use so Atlas can work with them. Atlas always asks before it does anything.</div>
+          <div className="max-w-[460px] text-base leading-[20px] text-ink-2">Choose an app and follow the short setup. Atlas saves it on this Mac and asks before using its tools.</div>
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
@@ -255,7 +259,7 @@ export function McpIntegrations({ servers, status, saving, onSave }: {
                       {!enabled ? <Badge tone="muted">Disabled</Badge>
                         : state?.error ? <Badge tone="bad">Error</Badge>
                         : state?.running ? <Badge tone="ok">Connected</Badge>
-                        : <Badge tone="muted">On</Badge>}
+                        : <Badge tone="muted">Ready</Badge>}
                     </div>
                     <div className="mt-0.5 truncate text-xs text-ink-2">{POPULAR_INTEGRATIONS.find((p) => p.name.replace(/\s+/g, "") === server.name)?.description || "Custom integration"}</div>
                   </div>
@@ -281,7 +285,7 @@ export function McpIntegrations({ servers, status, saving, onSave }: {
           <div className="mt-7 flex items-end justify-between gap-3">
             <div>
               <div className="text-sm font-medium text-ink">Popular</div>
-              <div className="mt-0.5 text-xs text-ink-3">Click one to connect it</div>
+              <div className="mt-0.5 text-xs text-ink-3">Choose an app to connect. Some need an access key; others are ready right away.</div>
             </div>
             
           </div>
@@ -294,10 +298,9 @@ export function McpIntegrations({ servers, status, saving, onSave }: {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-ink">{item.name}</span>
                   <span className="mt-0.5 block text-2xs leading-[14px] text-ink-3 line-clamp-2">{item.description}</span>
+                  <span className="mt-1 block text-[11px] text-ink-3">{(item.setup || []).some((f) => f.kind === "secret") ? "Access key needed" : "Quick setup"}</span>
                 </span>
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-line text-ink-3 transition-colors group-hover:border-ink-2 group-hover:text-ink">
-                  <Plus size={14} />
-                </span>
+                <span className="shrink-0 rounded-md border border-line px-2.5 py-1.5 text-xs text-ink-2 transition-colors group-hover:border-line-strong group-hover:text-ink">Connect</span>
               </button>
             ))}
           </div>

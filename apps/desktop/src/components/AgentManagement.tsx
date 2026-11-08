@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ChevronRight, Crown, MoreHorizontal, Plus, Sparkles, Users } from "lucide-react";
-import { Agent, api, Team, useApi } from "../api";
+import { Agent, api } from "../api";
 import { useStore } from "../store";
 import { BrandMark } from "./Brand";
 import { resolveProviderIconKey } from "./Endpoints";
@@ -56,44 +56,66 @@ export function AgentRoster({ agents, loading, onReload, showTeam = false, empty
 }
 
 export function CreateAgentModal({ open, onClose, teamId, onSaved }: { open: boolean; onClose: () => void; teamId?: string; onSaved?: () => void }) {
-  const { data: teams = [] } = useApi<Team[]>(open && !teamId ? "/teams" : null, ["team"]);
-  const { data: presets = [] } = useApi<{ id: string; name: string; data: Partial<Agent> }[]>(open ? "/presets" : null, ["preset"]);
   const { settings } = useStore();
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
+  const [persona, setPersona] = useState("");
+  const [expertise, setExpertise] = useState("");
+  const [voice, setVoice] = useState("Clear and direct");
+  const [approach, setApproach] = useState("Think carefully, then act");
   const [instructions, setInstructions] = useState("");
-  const [team, setTeam] = useState(teamId || "");
   const [manual, setManual] = useState(false);
   const [model, setModel] = useState<{ provider?: string; name?: string }>({});
-  const [preset, setPreset] = useState("");
   const { busy, run } = useAction();
-  useEffect(() => { if (open) { setName(""); setRole(""); setInstructions(""); setTeam(teamId || ""); setManual(false); setModel({}); setPreset(""); } }, [open, teamId]);
-  const selected = presets.find((p) => p.id === preset)?.data;
-  const valid = Boolean((name || selected?.name || "").trim() && (role || selected?.role || "").trim() && (!manual || (model.provider && model.name)));
+  useEffect(() => { if (open) { setName(""); setRole(""); setPersona(""); setExpertise(""); setVoice("Clear and direct"); setApproach("Think carefully, then act"); setInstructions(""); setManual(false); setModel({}); } }, [open]);
+  const valid = Boolean(name.trim() && role.trim() && (!manual || (model.provider && model.name)));
   const create = async () => {
     if (!valid || busy) return;
+    const personalizedInstructions = [
+      persona.trim() && `PERSONALITY\n${persona.trim()}`,
+      expertise.trim() && `SPECIALTY\n${expertise.trim()}`,
+      `COMMUNICATION STYLE\n${voice}`,
+      `WORKING STYLE\n${approach}`,
+      instructions.trim() && `ADDITIONAL GUIDANCE\n${instructions.trim()}`,
+    ].filter(Boolean).join("\n\n");
     const agent = await run("create", () => api<Agent>("/agents", { body: {
-      ...selected, name: (name || selected?.name || "").trim(), role: (role || selected?.role || "").trim().replace(/\s+/g, "_").toLowerCase(),
-      team_id: teamId || team || null, instructions: instructions || selected?.instructions || "",
+      name: name.trim(), role: role.trim().replace(/\s+/g, "_").toLowerCase(),
+      team_id: teamId || null, instructions: personalizedInstructions,
       provider_id: manual ? model.provider : undefined, model: manual ? model.name : undefined, auto_assign_model: !manual,
-      tools: selected?.tools || settings?.["agents.default_tools"] || ["read", "write", "shell", "git", "messages", "memory"],
+      tools: settings?.["agents.default_tools"] || ["read", "write", "shell", "git", "messages", "memory"],
     } }), "Agent created");
     if (agent) { onSaved?.(); onClose(); }
   };
-  return <Modal open={open} onClose={onClose} title="New agent" footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" icon={<Plus size={14} />} disabled={!valid} busy={busy !== null} onClick={create}>Create agent</Button></>}>
-    <div className="space-y-5 text-ink">
-      <p className="text-sm text-ink-2">Give your agent a role. Atlas can choose a model from your connected endpoints.</p>
-      <div className="grid grid-cols-1 min-[600px]:grid-cols-2 gap-4">
-        <Field label="Name"><Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={selected?.name || "API engineer"} /></Field>
-        <Field label="Role"><Input value={role} onChange={(e) => setRole(e.target.value)} placeholder={selected?.role || "Engineer"} /></Field>
+  return <Modal open={open} onClose={onClose} title="Create your agent" width={680} footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" icon={<Plus size={14} />} disabled={!valid} busy={busy !== null} onClick={create}>Create agent</Button></>}>
+    <div className="space-y-6 text-ink">
+      <div className="flex items-center gap-3 border-b border-line pb-5">
+        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl border border-line bg-active text-lg font-semibold text-ink">{name.trim().slice(0, 1).toUpperCase() || "A"}</div>
+        <div className="min-w-0"><div className="truncate text-base font-medium">{name.trim() || "Your agent"}</div><div className="mt-0.5 truncate text-sm text-ink-2">{role.trim() || "Define its role below"}</div></div>
+        <span className="ml-auto shrink-0 rounded-full border border-line px-2.5 py-1 text-xs text-ink-2">Custom profile</span>
       </div>
-      {!teamId && <Field label="Team"><Select value={team} onChange={(e) => setTeam(e.target.value)}><option value="">Independent agent</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</Select></Field>}
-      <Field label="Model"><Select value={manual ? "manual" : "auto"} onChange={(e) => setManual(e.target.value === "manual")}><option value="auto">Choose automatically</option><option value="manual">Choose a specific model</option></Select></Field>
-      {manual && <Field label="Select model"><ModelPicker providerId={model.provider} model={model.name} onChange={(provider, name) => setModel({ provider, name })} /></Field>}
-      <details className="rounded-lg border border-line p-3"><summary className="cursor-pointer text-sm text-ink-2">Instructions & presets</summary><div className="space-y-4 mt-4">
-        {presets.length > 0 && <Field label="Preset"><Select value={preset} onChange={(e) => setPreset(e.target.value)}><option value="">No preset</option>{presets.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>}
-        <Field label="Instructions"><TextArea rows={3} value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder={selected?.instructions || "Optional guidance for this agent"} /></Field>
-      </div></details>
+      <section className="space-y-4">
+        <div><h3 className="text-sm font-semibold">Identity</h3><p className="mt-1 text-xs text-ink-3">Give this agent a name and a clear area of responsibility.</p></div>
+        <div className="grid grid-cols-1 gap-4 min-[600px]:grid-cols-2">
+          <Field label="Name"><Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Nova" /></Field>
+          <Field label="Role"><Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="e.g. Frontend engineer" /></Field>
+        </div>
+        <Field label="Model"><Select value={manual ? "manual" : "auto"} onChange={(e) => setManual(e.target.value === "manual")}><option value="auto">Choose automatically</option><option value="manual">Choose a specific model</option></Select></Field>
+        {manual && <Field label="Select model"><ModelPicker providerId={model.provider} model={model.name} onChange={(provider, name) => setModel({ provider, name })} /></Field>}
+      </section>
+      <section className="space-y-4 border-t border-line pt-5">
+        <div><h3 className="text-sm font-semibold">Personality</h3><p className="mt-1 text-xs text-ink-3">This becomes part of the agent’s standing instructions for every task.</p></div>
+        <Field label="How should it act?" hint="Write freely. Include traits, values, or how it should react under pressure.">
+          <TextArea rows={3} value={persona} onChange={(e) => setPersona(e.target.value)} placeholder="A sharp, curious partner: candid about problems, playful when it fits, and clear about uncertainty." />
+        </Field>
+        <Field label="Expertise"><Input value={expertise} onChange={(e) => setExpertise(e.target.value)} placeholder="e.g. React performance, API design, accessibility" /></Field>
+        <div className="grid grid-cols-1 gap-4 min-[600px]:grid-cols-2">
+          <Field label="Voice"><Select value={voice} onChange={(e) => setVoice(e.target.value)}>{["Clear and direct", "Warm and encouraging", "Concise and technical", "Curious and exploratory", "Witty and candid"].map((v) => <option key={v}>{v}</option>)}</Select></Field>
+          <Field label="Work approach"><Select value={approach} onChange={(e) => setApproach(e.target.value)}>{["Think carefully, then act", "Move quickly and iterate", "Ask before assumptions", "Challenge ideas and find risks"].map((v) => <option key={v}>{v}</option>)}</Select></Field>
+        </div>
+        <Field label="Extra instructions" hint="Optional rules, boundaries, preferred tools, or response format.">
+          <TextArea rows={3} value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="Add any specific guidance you want this agent to follow." />
+        </Field>
+      </section>
     </div>
   </Modal>;
 }

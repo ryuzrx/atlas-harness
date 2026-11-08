@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from atlas.providers.cli_agents import ClaudeCodeProvider, CodexProvider
+from atlas.providers.cli_agents import ClaudeCodeProvider, CodexProvider, HermesProvider
 
 
 def provider(cls, config=None):
@@ -53,6 +53,21 @@ def test_claude_aliases_have_labels_and_are_not_duplicated():
     assert models[1].details["description"]
     models = asyncio.run(provider(ClaudeCodeProvider, {"models": ["default", "sonnet", "sonnet"]}).list_models())
     assert [m.name for m in models] == ["default", "sonnet"]
+
+
+def test_hermes_runtime_applies_automatic_team_turn_budget(monkeypatch):
+    async def check():
+        seen = {}
+        async def fake_run(*args, **kwargs):
+            seen["max_turns"] = kwargs.get("max_turns")
+            return {"text": "done", "usage": {}}
+        monkeypatch.setattr(HermesProvider, "_run", fake_run)
+        result = await provider(HermesProvider).run_agent(
+            run_id="team-task", prompt="inspect", system="", cwd="/tmp", model="default",
+            permissions={"write": False, "max_steps": 6}, on_event=None, timeout=30)
+        assert result["text"] == "done"
+        assert seen["max_turns"] == 6
+    asyncio.run(check())
 
 
 def test_cli_health_cancellation_reaps_process(monkeypatch):

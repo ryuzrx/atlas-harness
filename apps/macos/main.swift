@@ -152,7 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKSc
         @keyframes travel{from{transform:translateX(-120%)}to{transform:translateX(340%)}}@keyframes enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
         @media(prefers-reduced-motion:reduce){*{animation:none!important}.track span{width:100%;opacity:.6}}
         </style></head><body><div class="b"><div class="mark"><svg viewBox="0 0 40 28" aria-hidden="true"><path d="M0 28 L13 0 H21 L8 28 Z"/><path d="M23.6 5.2 L39 28 H29.6 L19.9 13.2 Z"/></svg></div><h1>\(error ? esc(title) : "Atlas")</h1>
-        \(error ? "<pre>" + esc(detail) + "</pre>" : "<p role=\"status\">" + esc(detail) + "</p><div class=\"track\" aria-hidden=\"true\"><span></span></div>")
+        \(error ? "<p role=\"status\">Atlas couldn’t start. Quit and reopen the app. A fresh diagnostic log is saved locally.</p>" : "<p role=\"status\">" + esc(detail) + "</p><div class=\"track\" aria-hidden=\"true\"><span></span></div>")
         </div></body></html>
         """
     }
@@ -176,11 +176,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKSc
         let logURL = dataDir().appendingPathComponent("logs/backend.log")
         if !FileManager.default.fileExists(atPath: logURL.path) { FileManager.default.createFile(atPath: logURL.path, contents: nil) }
         logHandle = try? FileHandle(forWritingTo: logURL)
+        logHandle?.truncateFile(atOffset: 0)
         logHandle?.seekToEndOfFile()
 
         let p = Process()
         p.executableURL = python
-        p.arguments = ["-m", "atlas.main", "--static", res.appendingPathComponent("ui").path]
+        let backendPath = res.appendingPathComponent("backend").path
+        let pythonLibPath = res.appendingPathComponent("pylib").path
+        let bootstrap = "import sys, runpy; sys.path[:0] = sys.argv[1:3]; del sys.argv[1:3]; runpy.run_module('atlas.main', run_name='__main__')"
+        p.arguments = ["-c", bootstrap, backendPath, pythonLibPath, "--static", res.appendingPathComponent("ui").path]
         var env = ProcessInfo.processInfo.environment
         env["ATLAS_TOKEN"] = token
         env["PYTHONPATH"] = res.appendingPathComponent("backend").path + ":" + res.appendingPathComponent("pylib").path

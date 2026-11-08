@@ -15,7 +15,7 @@ function GitPanel({ project }: { project: Project }) {
   if (!g.is_repo || !g.branch) return (
     <Card className="p-4">
       <div className="font-medium">{g.is_repo ? "Repository has no commits" : "Not a git repository"}</div>
-      <div className="text-ink-2 text-sm mt-1">Coding tasks run in isolated git worktrees so agents never touch your checkout. Without git, write tasks run one at a time directly in the folder.</div>
+      <div className="text-ink-2 text-sm mt-1">Coding work runs in isolated git worktrees so agents never touch your checkout. Without git, file changes happen directly in the folder.</div>
       <Button className="mt-3" icon={<GitBranchPlus size={14} />} busy={busy === "i"} onClick={() => confirm(`Initialize git in ${project.path} and commit the current files?`) && run("i", () => api(`/projects/${project.id}/git-init`, { body: {} }), "Repository initialized").then(reload)}>
         Initialize git and commit current files</Button>
     </Card>);
@@ -54,7 +54,7 @@ export function Projects() {
   return (
     <div className="max-w-[860px] mx-auto">
       {!cur ? (
-        <Card><Empty icon={<FolderGit2 size={22} />} title="No projects" body="Add a folder (ideally a git repository) to let teams work on it. Each agent is confined to its project." action={<Button icon={<FolderPlus size={14} />} onClick={add}>Add project</Button>} /></Card>
+        <Card><Empty icon={<FolderGit2 size={22} />} title="No projects" body="Add a folder (ideally a git repository) so agents can work within that project." action={<Button icon={<FolderPlus size={14} />} onClick={add}>Add project</Button>} /></Card>
       ) : (
         <div className="min-w-0 space-y-6">
           <div className="flex items-center gap-2 pb-5 border-b border-line">

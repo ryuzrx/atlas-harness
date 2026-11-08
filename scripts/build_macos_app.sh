@@ -58,8 +58,17 @@ echo "==> Python packages (vendored into the bundle; runs on the system python3)
 find "$APP/Contents/Resources/pylib" -name '__pycache__' -prune -exec rm -rf {} +
 /usr/bin/python3 -c "import sys; sys.path[:0]=['$APP/Contents/Resources/pylib','$APP/Contents/Resources/backend']; import atlas.api; print('   backend imports OK on', sys.version.split()[0])"
 
-echo "==> Signing (ad-hoc)"
-codesign --force --deep --sign - "$APP" 2>/dev/null || echo "   (ad-hoc signing skipped)"
+SIGN_IDENTITY="${ATLAS_CODESIGN_IDENTITY:-}"
+if [ -z "$SIGN_IDENTITY" ]; then
+  SIGN_IDENTITY="$(/usr/bin/security find-identity -v -p codesigning 2>/dev/null | awk -F '"' '/Apple Development:/ { print $2; exit }')"
+fi
+if [ -n "$SIGN_IDENTITY" ]; then
+  echo "==> Signing with the stable Apple Development identity"
+  codesign --force --deep --sign "$SIGN_IDENTITY" "$APP"
+else
+  echo "==> Signing (ad-hoc; no Apple Development identity found)"
+  codesign --force --deep --sign - "$APP" 2>/dev/null || echo "   (ad-hoc signing skipped)"
+fi
 
 echo "==> Installing to $DEST"
 mkdir -p "$DEST"

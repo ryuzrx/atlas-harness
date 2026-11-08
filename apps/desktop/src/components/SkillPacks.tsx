@@ -1,9 +1,9 @@
 import React, { useState } from "react";
 import { BarChart3, BookOpen, Bot, Braces, Briefcase, Check, ChevronDown, ClipboardList, Code2, Feather, FileCode, FlaskConical, Gamepad2, GitBranch, Globe, GraduationCap, Headphones, Megaphone, Palette, PenLine, Rocket, Search, Server, ShieldCheck, Sigma, Smartphone, SquareTerminal, Wallet } from "lucide-react";
-import { api, useApi } from "../api";
+import { api, openExternal, useApi } from "../api";
 import { Button, cx, Modal, useAction } from "./ui";
 
-interface Pack { id: string; name: string; description: string; installed: number; skills: { name: string; description: string; installed: boolean }[] }
+interface Pack { id: string; name: string; description: string; installed: number; source_repo?: string; source_revision?: string; source_url?: string; license?: string; skills: { name: string; description: string; installed: boolean }[] }
 const ICONS: Record<string, React.ElementType> = {
   "coding-essentials": Code2, "git-and-releases": GitBranch, "research-analysis": Search, "writing-communication": PenLine, "design-ux": Palette,
   "product-planning": ClipboardList, "data-analysis": BarChart3, "security-quality": ShieldCheck, "devops-ship": Rocket, "learning-coach": GraduationCap,
@@ -29,6 +29,7 @@ function PackCard({ pack }: { pack: Pack }) {
         <div className="min-w-0 flex-1">
           <div className="text-lg text-ink">{pack.name}</div>
           <div className="text-sm text-ink-2 leading-[18px] mt-0.5">{pack.description}</div>
+          {pack.source_repo && <div className="mt-1.5 text-xs text-ink-3">{pack.license || "Open source"} · {pack.source_repo}{pack.source_url && <> · <button type="button" onClick={() => openExternal(pack.source_url!)} className="underline underline-offset-2 hover:text-ink">View source</button></>}</div>}
           <button onClick={() => setOpen((o) => !o)} aria-expanded={open} className="mt-2 text-sm text-ink-3 hover:text-ink flex items-center gap-1">
             {pack.skills.length} skills<ChevronDown size={13} className={cx("transition-transform duration-200", open && "rotate-180")} /></button>
         </div>

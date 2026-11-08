@@ -110,10 +110,12 @@ class OpenAICompatProvider(Provider):
     async def chat(self, model, messages, *, tools=None, params=None, on_token: TokenCallback = None, json_mode=False):
         params = params or {}
         body: Dict[str, Any] = {"model": model, "messages": [_to_openai(m) for m in messages], "stream": True}
-        if params.get("temperature") is not None and not self.config.get("omit_temperature"):
+        if params.get("temperature") is not None and not self.config.get("omit_temperature") and not params.get("reasoning_effort"):
             body["temperature"] = params["temperature"]
         if params.get("max_tokens"):
             body["max_tokens"] = int(params["max_tokens"])
+        if params.get("reasoning_effort") in ("low", "medium", "high", "xhigh"):
+            body["reasoning_effort"] = params["reasoning_effort"]
         if tools:
             body["tools"] = tool_schema_openai(tools)
         if json_mode and self.config.get("json_mode", True):

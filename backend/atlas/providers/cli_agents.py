@@ -1,4 +1,4 @@
-"""CLI agent runtimes: Claude Code (`claude -p`) and OpenAI Codex (`codex exec`).
+"""CLI agent runtimes: Hermes, Claude Code, and OpenAI Codex.
 
 These tools run their own agent loop with their own sign-in (subscription or API key).
 ATLAS supervises them: it chooses the working directory (an isolated git worktree), restricts
@@ -8,9 +8,12 @@ resulting diff itself rather than trusting the CLI's report.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import mimetypes
 import os
 import shutil
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional
@@ -133,7 +136,7 @@ class CLIAgentProvider(Provider):
 
             await asyncio.wait_for(read_out(), timeout)
             rc = await proc.wait()
-        except (asyncio.CancelledError, asyncio.TimeoutError):
+        except (asyncio.CancelledError, Exception):
             await self._kill(proc)
             raise
         finally:
@@ -160,6 +163,121 @@ class CLIAgentProvider(Provider):
     async def run_agent(self, *, run_id: str, prompt: str, system: str, cwd: str, model: Optional[str],
                         permissions: Dict[str, Any], on_event: EventCallback, timeout: float) -> Dict[str, Any]:
         raise NotImplementedError
+
+
+class HermesProvider(CLIAgentProvider):
+    """Atlas's adapter for the Hermes agent runtime and its JSONL tool stream."""
+    kind = "hermes_cli"
+    binary_name = "hermes"
+
+    async def list_models(self) -> List[ModelInfo]:
+        configured = self.config.get("models") or []
+        names = list(dict.fromkeys(n for n in configured if isinstance(n, str) and n.strip() and n != "default"))
+        return [ModelInfo(name=name, provider_id=self.id,
+                          capabilities={"tools": True, "streaming": True, "agentic": True},
+                          details={"display_name": name,
+                                   "description": "Hermes agent runtime with web search and project tools."},
+                          state="available") for name in names]
+
+    def _base(self, model: Optional[str], cwd: str, toolsets: str, image: Optional[str] = None) -> List[str]:
+        binary = self.binary
+        if not binary:
+            raise ProviderError("Atlas runtime is unavailable: Hermes CLI was not found.", retryable=False)
+        argv = [binary, "chat", "--query-file", "-", "--oneshot", "--format", "stream-json",
+                "--source", "tool", "--in", cwd, "-t", toolsets]
+        if model and model != "default":
+            argv += ["--model", model]
+        if image:
+            argv += ["--image", image]
+        return argv
+
+    async def _run(self, run_id: str, cwd: str, prompt: str, model: Optional[str], toolsets: str,
+                   on_event: Optional[EventCallback], on_token: TokenCallback, timeout: float,
+                   reasoning: Optional[str] = None, image: Optional[str] = None,
+                   max_turns: Optional[int] = None) -> Dict[str, Any]:
+        argv = self._base(model, cwd, toolsets, image)
+        if max_turns and max_turns > 0:
+            argv += ["--max-turns", str(max_turns)]
+        if reasoning in ("low", "medium", "high", "xhigh"):
+            argv += ["--reasoning", reasoning]
+        final: Dict[str, Any] = {"text": "", "usage": {}}
+        streamed: List[str] = []
+        got_result = False
+
+        async def on_line(event: Dict[str, Any]) -> None:
+            nonlocal got_result
+            kind = event.get("type")
+            if kind == "text":
+                piece = str(event.get("text") or "")
+                streamed.append(piece)
+                if on_token and piece:
+                    await on_token(piece)
+            elif kind == "tool_use" and on_event:
+                await on_event("tool_call", {"id": event.get("tool_call_id"), "tool": event.get("name"),
+                                             "args": event.get("input") or {}, "runtime": "atlas"})
+            elif kind == "tool_result" and on_event:
+                await on_event("tool_result", {"id": event.get("tool_call_id"), "tool": event.get("name"),
+                                               "output": event.get("output") or "", "ms": event.get("duration_ms"),
+                                               "is_error": bool(event.get("is_error")), "runtime": "atlas"})
+            elif kind == "result":
+                got_result = True
+                final["text"] = str(event.get("text") or "".join(streamed)).strip()
+                tokens = event.get("tokens") or {}
+                final["usage"] = {"prompt_tokens": tokens.get("input") or 0,
+                                  "completion_tokens": tokens.get("output") or 0, "measured": True}
+                if event.get("exit_code") or event.get("error"):
+                    raise ProviderError(f"Atlas runtime failed: {event.get('error') or 'exit code ' + str(event.get('exit_code'))}",
+                                        retryable=False)
+
+        await self._stream(run_id, argv, cwd, prompt, on_line, timeout)
+        if not got_result or not final["text"]:
+            raise ProviderError("Atlas runtime ended without a final answer.", retryable=False)
+        return final
+
+    async def chat(self, model, messages, *, tools=None, params=None, on_token: TokenCallback = None, json_mode=False):
+        image_files: List[Path] = []
+        message_text: List[str] = []
+        with tempfile.TemporaryDirectory(prefix="atlas-chat-images-") as image_dir:
+            for message in messages:
+                content = message.get("content") or ""
+                if not isinstance(content, list):
+                    message_text.append(f"[{message['role']}]\n{content}")
+                    continue
+                text_blocks = []
+                for block in content:
+                    if block.get("type") == "text":
+                        text_blocks.append(str(block.get("text") or ""))
+                    elif block.get("type") == "image" and block.get("data"):
+                        mime = str(block.get("mime_type") or "image/png")
+                        suffix = mimetypes.guess_extension(mime) or ".png"
+                        path = Path(image_dir) / f"image-{len(image_files) + 1}{suffix}"
+                        try:
+                            path.write_bytes(base64.b64decode(block["data"], validate=True))
+                        except (ValueError, OSError) as exc:
+                            raise ProviderError("Atlas could not prepare the attached image.", retryable=False) from exc
+                        image_files.append(path)
+                        text_blocks.append(f"[Attached image {block.get('name') or path.name}: {path}]")
+                message_text.append(f"[{message['role']}]\n" + "\n".join(text_blocks))
+            prompt = "\n\n".join(message_text)
+            if len(image_files) > 1:
+                prompt += "\n\nAdditional attached images are available at the paths listed above. Inspect them with vision tools."
+            cwd = str(Path.home())
+            started = time.perf_counter()
+            result = await self._run(f"chat-{time.time()}", cwd, prompt, model, "web,search,vision",
+                                     None, on_token, float((params or {}).get("timeout", 600)),
+                                     (params or {}).get("reasoning_effort"),
+                                     str(image_files[0]) if image_files else None)
+        return ChatResult(text=result["text"], usage=result["usage"],
+                          latency_ms=(time.perf_counter() - started) * 1000)
+
+    async def run_agent(self, *, run_id, prompt, system, cwd, model, permissions, on_event, timeout):
+        # Read-only tasks still need Hermes' file toolset to inspect project files.
+        # Keep terminal access to the coding posture, where runs use an isolated workspace.
+        toolsets = "coding" if permissions.get("write") else "file,web,vision"
+        full_prompt = f"{system}\n\n{prompt}" if system else prompt
+        return await self._run(run_id, cwd, full_prompt, model, toolsets, on_event, None, timeout,
+                               permissions.get("reasoning_effort"),
+                               max_turns=permissions.get("max_steps"))
 
 
 class ClaudeCodeProvider(CLIAgentProvider):

@@ -13,6 +13,8 @@ panel and the final result is copied into the message when the task finishes.
 from __future__ import annotations
 
 import asyncio
+import base64
+import mimetypes
 import shutil
 import re
 import time
@@ -20,6 +22,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import extensions
+from .agent import strip_tool_markup
 from .config import data_dir
 from .db import DB, new_id, now
 from .events import EventBus
@@ -32,6 +35,7 @@ CHAT_PARALLEL = 4  # chats sharing one model can run side by side
 MAX_ATTACHMENT_CHARS = 200_000
 MAX_IMAGE_CHARS = 6_000_000
 MAX_UPLOAD_BYTES = 2 * 1024 ** 3   # big files are streamed to disk and read with tools, not pasted into the prompt
+CHAT_TOOL_BLOCK = re.compile(r"```(?:tool|tool_call)\s*\n(.*?)\n?```", re.S)
 
 
 def uploads_dir() -> Path:
@@ -39,6 +43,14 @@ def uploads_dir() -> Path:
     d.mkdir(parents=True, exist_ok=True)
     return d
 DEFAULT_TITLE = "New chat"
+
+
+def _clean_assistant_text(value: Any) -> str:
+    """Keep provider control syntax out of saved replies and future prompts."""
+    text = strip_tool_markup(CHAT_TOOL_BLOCK.sub("", str(value or "")))
+    if re.search(r"<\|(?:dsml|im_start|im_sep|invoke|function_call)[^|]*\|>|<invoke\b|<function_calls\b", text, re.I):
+        return "The model returned internal tool instructions instead of an answer. Try again or choose another model."
+    return text
 
 
 class ChatError(Exception):
@@ -64,7 +76,7 @@ class ChatService:
                 conv = self.db.get("conversations", m["conversation_id"]) or {}
                 cfg = conv.get("config") or {}
                 messages = self._model_messages(m["conversation_id"], cfg, m["id"])
-                partial = m["content"] or ""
+                partial = _clean_assistant_text(m["content"])
                 if partial.strip():
                     messages += [{"role": "assistant", "content": partial},
                                  {"role": "user", "content": "Your previous reply was cut off by a restart. Continue it exactly "
@@ -193,6 +205,43 @@ class ChatService:
             tools = ["read", "write", "shell"]   # large files need tools to open them
         else:
             tools = []
+        compare_targets: List[Dict[str, str]] = []
+        requested_compare = cfg.get("compare_models")
+        if mode == "model" and isinstance(requested_compare, list) and len(requested_compare) > 1:
+            if len(requested_compare) > 4:
+                raise ChatError("Compare up to four models at once.")
+            if tools or access_level == "computer_use":
+                raise ChatError("Parallel model comparison is available in a plain chat without workspace tools.")
+            seen = set()
+            for item in requested_compare:
+                if not isinstance(item, dict):
+                    raise ChatError("One of the selected models is invalid. Choose the models again.")
+                pid, model = str(item.get("provider_id") or "").strip(), str(item.get("model") or "").strip()
+                key = (pid, model)
+                if not pid or not model or len(model) > 200 or key in seen:
+                    raise ChatError("One of the selected models is invalid. Choose the models again.")
+                if pid not in self.router.providers:
+                    raise ChatError("One selected provider is unavailable. Reconnect it or choose another model.")
+                seen.add(key)
+                compare_targets.append({"provider_id": pid, "model": model})
+        elif mode == "model" and cfg.get("provider_id") and cfg.get("model"):
+            compare_targets = [{"provider_id": str(cfg["provider_id"]), "model": str(cfg["model"])}]
+            if compare_targets[0]["provider_id"] not in self.router.providers:
+                raise ChatError("That model's provider no longer exists. Choose another model.")
+        if mode == "model" and not compare_targets:
+            raise ChatError("Choose a model in the Model menu.")
+        if mode != "model" or tools or access_level == "computer_use":
+            image_root = uploads_dir()
+            for attachment in attachments:
+                if attachment["type"].startswith("image/") and attachment.get("content") and not attachment.get("path"):
+                    ext = mimetypes.guess_extension(attachment["type"]) or ".png"
+                    image_path = image_root / f"{new_id('image')}{ext}"
+                    try:
+                        image_path.write_bytes(base64.b64decode(attachment["content"], validate=True))
+                    except (ValueError, OSError) as exc:
+                        raise ChatError(f"Could not prepare attached image {attachment['name']}.") from exc
+                    attachment["path"], attachment["size"] = str(image_path), image_path.stat().st_size
+            uploads = [a for a in attachments if a.get("path")]
         read_roots = [str(Path(a["path"]).parent) for a in uploads]
         if mode == "team" and access_level == "computer_use":
             raise ChatError("Atlas Computer Use is not available for team chats.")
@@ -213,12 +262,17 @@ class ChatService:
         if mode == "team":
             if not cfg.get("team_id") or not self.db.get("teams", cfg["team_id"]):
                 raise ChatError("Choose a team in the Agent menu.")
-            task = self.orch.submit_objective(cfg["team_id"], self._context_prompt(cid, prompt, user["id"]),
+            task_prompt = self._context_prompt(cid, prompt, user["id"])
+            if cfg.get("system"):
+                task_prompt = f"Additional instructions from the user:\n{cfg['system'].strip()}\n\n{task_prompt}"
+            task = self.orch.submit_objective(cfg["team_id"], task_prompt,
                                               cfg.get("project_id"), _title_from(content or "Objective"),
                                               config={"access_level": access_level, "tool_limit": tools or None,
                                                       "user_request": content, "read_roots": read_roots,
                                                       "conversation_id": cid,
+                                                      "reasoning_effort": cfg.get("reasoning_effort"),
                                                       "computer_consent_for": cfg.get("computer_consent_for"),
+                                                      "auto_team": bool(cfg.get("auto_team")),
                                                "auto_approve": True})
             label = {"mode": "team", "team_id": cfg["team_id"]}
         elif mode == "agent" or any(g in AGENT_TOOL_GROUPS for g in tools) or access_level == "computer_use":
@@ -228,12 +282,16 @@ class ChatService:
                     raise ChatError("Choose an agent in the Agent menu.")
             else:
                 agent = self._assistant_agent(cfg)
+            task_prompt = self._context_prompt(cid, prompt, user["id"])
+            if cfg.get("system"):
+                task_prompt = f"Additional instructions from the user:\n{cfg['system'].strip()}\n\n{task_prompt}"
             task = self.orch.create_task({
-                "title": _title_from(content or "Chat request"), "description": self._context_prompt(cid, prompt, user["id"]),
+                "title": _title_from(content or "Chat request"), "description": task_prompt,
                 "agent_id": agent["id"], "team_id": agent.get("team_id"), "project_id": cfg.get("project_id"),
                 "kind": "code", "config": {"tool_limit": tools or None, "access_level": access_level,
                                                "user_request": content, "read_roots": read_roots,
                                                "conversation_id": cid,
+                                               "reasoning_effort": cfg.get("reasoning_effort"),
                                                "computer_consent_for": cfg.get("computer_consent_for"),
                                                "auto_approve": True}})
             label = {"mode": "agent", "agent_id": agent["id"], "agent_name": agent["name"]}
@@ -247,24 +305,28 @@ class ChatService:
                 "task_id": task["id"], "data": label, "created_at": now()})
             self._watch(asst["id"], cid, task["id"])
         else:
-            pid, model = cfg.get("provider_id"), cfg.get("model")
-            if not pid or not model:
-                raise ChatError("Choose a model in the Model menu.")
-            if pid not in self.router.providers:
-                raise ChatError("That model's provider no longer exists. Choose another model.")
-            asst = self.db.insert("chat_messages", {
+            compare_group = new_id("compare") if len(compare_targets) > 1 else None
+            assistants = [self.db.insert("chat_messages", {
                 "id": new_id("msg"), "conversation_id": cid, "role": "assistant", "content": "", "status": "streaming",
-                "data": {"mode": "model", "provider_id": pid, "model": model}, "created_at": now()})
+                "data": {"mode": "model", **target,
+                         **({"compare_group": compare_group, "compare_count": len(compare_targets)} if compare_group else {})},
+                "created_at": now()}) for target in compare_targets]
+            asst = assistants[0]
             messages = self._model_messages(cid, cfg, asst["id"])
-            self.streams[asst["id"]] = asyncio.ensure_future(self._stream(cid, asst["id"], pid, model, messages, cfg))
+            for response, target in zip(assistants, compare_targets):
+                self.streams[response["id"]] = asyncio.ensure_future(
+                    self._stream(cid, response["id"], target["provider_id"], target["model"], messages, cfg))
         self.bus.changed("conversation", cid)
-        return {"user": user, "assistant": asst}
+        return {"user": user, "assistant": asst, **({"assistants": assistants} if not task and len(compare_targets) > 1 else {})}
 
     # ------------------------------------------------------------------ model streaming
     def _model_messages(self, cid: str, cfg: Dict[str, Any], exclude_id: str) -> List[Dict[str, Any]]:
         system = (cfg.get("system") or "").strip() or (
-            "You are Atlas, a precise, helpful assistant inside a local multi-agent development harness. "
-            "Answer clearly and concisely. Use Markdown for code.")
+            "You are Atlas, a helpful assistant. Answer the user's actual request in clear, natural Markdown. "
+            "Lead with the answer or outcome. Give enough detail to make the answer useful, without filler. "
+            "When you used web sources, link directly to the pages that support your claims. "
+            "Link to relevant local files with Markdown paths. Do not claim you read, changed, or checked anything "
+            "you did not. Never show raw logs, internal tool syntax, or control tokens as the answer.")
         if "project" in (cfg.get("tools") or []) and cfg.get("project_id"):
             system += "\n\n" + self._project_context(cfg["project_id"])
         rows = self.db.q("SELECT * FROM chat_messages WHERE conversation_id=? AND id!=? ORDER BY created_at, rowid",
@@ -287,7 +349,9 @@ class ChatService:
                 else:
                     msgs.append({"role": "user", "content": m["content"]})
             elif m["role"] == "assistant" and m["content"] and m["status"] in ("done", "stopped"):
-                msgs.append({"role": "assistant", "content": m["content"]})
+                content = _clean_assistant_text(m["content"])
+                if content:
+                    msgs.append({"role": "assistant", "content": content})
         return msgs
 
     async def _stream(self, cid: str, mid: str, pid: str, model: str, messages: List[Dict[str, Any]],
@@ -298,28 +362,41 @@ class ChatService:
         async def on_token(tok: str) -> None:
             nonlocal last_save
             buf.append(tok)
-            self.bus.broadcast({"kind": "chat_delta", "conversation_id": cid, "message_id": mid, "delta": tok})
+            raw = "".join(buf)
+            # A provider can print its tool protocol as text. Do not stream that
+            # protocol into the conversation while the final reply is pending.
+            if "DSML" not in raw and "<|" not in raw and "```tool" not in raw:
+                self.bus.broadcast({"kind": "chat_delta", "conversation_id": cid, "message_id": mid, "delta": tok})
             if time.monotonic() - last_save > 2:
                 last_save = time.monotonic()
-                self.db.update("chat_messages", mid, {"content": "".join(buf)})
+                self.db.update("chat_messages", mid, {"content": _clean_assistant_text(raw)})
 
         status, extra = "done", {}
         try:
-            params = {"temperature": cfg["temperature"]} if cfg.get("temperature") is not None else None
+            params = {"temperature": cfg["temperature"]} if cfg.get("temperature") is not None else {}
+            if cfg.get("reasoning_effort") in ("low", "medium", "high", "xhigh"):
+                params["reasoning_effort"] = cfg["reasoning_effort"]
             res = await self.router.chat(pid, model, messages, on_token=on_token, params=params)
             streamed = "".join(buf[1:] if prefix else buf)
-            text = prefix + (streamed or res.text or "")
-            extra = {"usage": res.usage, "latency_ms": res.latency_ms}
+            text = _clean_assistant_text(prefix + (streamed or res.text or ""))
+            if not text:
+                status = "error"
+                extra = {"error": "The model returned no usable answer. Try again or choose another model."}
+            else:
+                extra = {"usage": res.usage, "latency_ms": res.latency_ms}
         except asyncio.CancelledError:
-            text, status = "".join(buf), "stopped"
+            text, status = _clean_assistant_text("".join(buf)), "stopped"
         except ProviderError as e:
-            text, status = "".join(buf), "error"
+            text, status = _clean_assistant_text("".join(buf)), "error"
             extra = {"error": str(e)}
         except Exception as e:  # noqa: BLE001 - surface any provider bug to the user, never hang the turn
-            text, status = "".join(buf), "error"
+            text, status = _clean_assistant_text("".join(buf)), "error"
             extra = {"error": f"{type(e).__name__}: {e}"}
         finally:
             self.streams.pop(mid, None)
+        text = _clean_assistant_text(text)
+        if not text and status == "error":
+            text = "The model could not produce a usable answer. Try again or choose another model."
         cur = self.db.get("chat_messages", mid)
         if cur:
             self.db.update("chat_messages", mid, {"content": text, "status": status, "data": {**(cur["data"] or {}), **extra, "finished_at": now()}})
@@ -346,7 +423,7 @@ class ChatService:
                             status, text = "stopped", (task.get("result") or "").strip()
                         else:
                             status = "done" if ok else "error"
-                            text = (task.get("result") or "").strip() or (task.get("error") or "").strip() or \
+                            text = _clean_assistant_text(task.get("result")) or _clean_assistant_text(task.get("error")) or \
                                 ("Done." if ok else f"Run {task['status']}.")
                         data = {**(msg.get("data") or {})}
                         data.setdefault("finished_at", now())
@@ -389,7 +466,8 @@ class ChatService:
                                      (cid, user_id)) if m["content"]][-8:]
         if not rows:
             return prompt
-        hist = "\n".join(f"{m['role'].upper()}: {m['content'][:1500]}" for m in rows)
+        hist = "\n".join(f"{m['role'].upper()}: {_clean_assistant_text(m['content'])[:1500]}"
+                          if m["role"] == "assistant" else f"USER: {m['content'][:1500]}" for m in rows)
         return f"Conversation so far (for context):\n{hist}\n\nCurrent request:\n{prompt}"
 
     def _project_context(self, project_id: str) -> str:
@@ -425,6 +503,9 @@ def _with_attachments(content: str, attachments: List[Dict[str, Any]]) -> str:
     parts = [content] if content else []
     for a in attachments:
         if a.get("path"):
+            if str(a.get("type", "")).startswith("image/"):
+                parts.append(f"Attached image `{a['name']}` is available at `{a['path']}`. Inspect the image with the available vision tool before answering.")
+                continue
             parts.append(f"Attached file `{a['name']}` ({_human_size(int(a.get('size') or 0))}) is saved at `{a['path']}`. "
                          "It is too large to include here: open it with your tools (read parts of it, search it, "
                          "or inspect it with terminal commands such as head, wc, file, unzip -l).")

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertCircle, BookOpen, Brain, Check, ChevronRight, FilePen, FilePlus, FileText, FolderOpen, GitBranch, Globe, Plug, Search, SquareTerminal, Wrench } from "lucide-react";
+import { AlertCircle, BookOpen, Brain, Check, FilePen, FilePlus, FileText, FolderOpen, GitBranch, Globe, Plug, Search, SquareTerminal, Wrench } from "lucide-react";
 import { AtlasEvent, api, subscribe } from "../api";
 import { AnimatedMark } from "./AnimatedMark";
 import { cx } from "./ui";
@@ -12,7 +12,6 @@ export interface RunStep {
   mono: boolean;
   kind: "command" | "read" | "list" | "search" | "write" | "create" | "git" | "memory" | "mcp" | "skill" | "web" | "other";
   state: "running" | "done" | "failed";
-  output?: string;
   ms?: number;
   exit?: number;
 }
@@ -28,27 +27,28 @@ const GIT_LABEL: Record<string, string> = { status: "Checked git status", diff: 
 function describe(tool: string, args: Record<string, any>): Pick<RunStep, "verb" | "target" | "mono" | "kind"> {
   const target = firstString(args || {});
   switch (tool) {
-    case "run_command": return { verb: "Ran", target: String(args?.command || target), mono: true, kind: "command" };
+    case "run_command": case "terminal": return { verb: "Ran a command", target: "", mono: false, kind: "command" };
     case "read_file": return { verb: "Read", target, mono: true, kind: "read" };
     case "list_dir": return { verb: "Listed", target: target || ".", mono: true, kind: "list" };
-    case "search": return { verb: "Searched for", target, mono: true, kind: "search" };
+    case "search": case "search_files": return { verb: "Searched for", target, mono: true, kind: "search" };
     case "write_file": return { verb: "Wrote", target, mono: true, kind: "create" };
     case "edit_file": return { verb: "Edited", target, mono: true, kind: "write" };
-    case "apply_patch": return { verb: "Applied a patch", target: "", mono: false, kind: "write" };
+    case "apply_patch": case "patch": return { verb: "Edited files", target: "", mono: false, kind: "write" };
     case "git": return { verb: GIT_LABEL[String(args?.action)] || "Git", target: args?.action === "commit" ? String(args?.message || "") : String(args?.ref || ""), mono: args?.action !== "commit", kind: "git" };
     case "remember": return { verb: "Saved to memory", target: String(args?.key || ""), mono: false, kind: "memory" };
     case "skill": return { verb: "Used skill", target, mono: false, kind: "skill" };
     case "mcp": return { verb: "Called", target: [args?.server, args?.tool].filter(Boolean).join(" › ") || target, mono: false, kind: "mcp" };
-    case "web_fetch": case "fetch_url": return { verb: "Opened", target, mono: false, kind: "web" };
+    case "web_search": return { verb: "Searched the web for", target, mono: false, kind: "web" };
+    case "web_extract": case "web_fetch": case "fetch_url": return { verb: "Opened", target, mono: false, kind: "web" };
     default: return { verb: tool.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()), target, mono: false, kind: "other" };
   }
 }
 
 const RUNNING_VERB: Partial<Record<RunStep["kind"], string>> = {
-  command: "Running", read: "Reading", list: "Listing", search: "Searching for", write: "Editing", create: "Writing", git: "Running git", memory: "Saving to memory", mcp: "Calling", web: "Opening",
+  command: "Running a command", read: "Reading", list: "Listing", search: "Searching for", write: "Editing", create: "Writing", git: "Running git", memory: "Saving to memory", mcp: "Calling", web: "Opening",
 };
 
-/** Collapse the raw event stream into one row per tool call: what ran, whether it worked, and its output. */
+/** Collapse run events into compact activity rows without exposing command output. */
 export function buildSteps(events: AtlasEvent[]): RunStep[] {
   const steps: RunStep[] = [];
   for (const e of events) {
@@ -62,7 +62,6 @@ export function buildSteps(events: AtlasEvent[]): RunStep[] {
       const failed = d.ok === false || !!d.is_error || (d.exit_code != null && d.exit_code !== 0 && d.tool === "run_command");
       if (open) {
         open.state = failed ? "failed" : "done";
-        open.output = String(d.output || "");
         open.ms = d.ms;
         if (d.exit_code != null) open.exit = Number(d.exit_code);
       }
@@ -104,15 +103,12 @@ function PathLabel({ path }: { path: string }) {
 }
 
 function StepRow({ s }: { s: RunStep }) {
-  const [open, setOpen] = useState(false);
   const Icon = ICON[s.kind];
-  const canOpen = !!s.output?.trim();
   const running = s.state === "running";
   const isPath = s.mono && (s.kind === "read" || s.kind === "write" || s.kind === "create" || s.kind === "list");
   return (
     <div>
-      <button onClick={() => canOpen && setOpen((o) => !o)} aria-expanded={canOpen ? open : undefined} disabled={!canOpen}
-        className={cx("group/step w-full min-h-8 flex items-center gap-2.5 px-1.5 py-1 rounded-lg text-left transition-colors", canOpen && "hover:bg-hover")}>
+      <div className="group/step w-full min-h-8 flex items-center gap-2.5 px-1.5 py-1 rounded-lg text-left">
         <span className="h-5 w-5 shrink-0 flex items-center justify-center rounded-md">
           {running ? <span className="working-spinner" /> : s.state === "failed" ? <AlertCircle size={14} className="text-bad" />
             : <Icon size={14} strokeWidth={1.7} className="text-ink-3" />}
@@ -124,9 +120,7 @@ function StepRow({ s }: { s: RunStep }) {
         {s.state === "failed" && <span className="text-[11px] text-bad shrink-0">{s.exit != null && s.exit !== 0 ? `exit ${s.exit}` : "failed"}</span>}
         {s.state === "done" && <Check size={13} strokeWidth={2.2} className="shrink-0 text-ink-3 opacity-0 group-hover/step:opacity-100 transition-opacity" />}
         {s.ms != null && !running && s.ms >= 1000 && <span className="text-[11px] text-ink-3 tnum shrink-0">{(s.ms / 1000).toFixed(1)}s</span>}
-        {canOpen && <ChevronRight size={12} className={cx("text-ink-3 shrink-0 transition-transform duration-150", open && "rotate-90")} />}
-      </button>
-      {open && <pre className="selectable ml-[34px] mr-1 mt-0.5 mb-2 p-3 rounded-lg bg-base border border-line text-xs leading-[1.55] font-mono whitespace-pre-wrap break-words max-h-[280px] overflow-auto text-ink-2">{(s.output || "").slice(0, 8000)}</pre>}
+      </div>
     </div>
   );
 }

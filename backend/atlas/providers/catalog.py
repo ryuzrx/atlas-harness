@@ -82,6 +82,8 @@ PROVIDER_PRESETS: List[Dict[str, Any]] = [
     {"id": "custom", "label": "Custom endpoint", "kind": "openai_compat", "category": "cloud", "base_url": "",
      "note": "Any OpenAI-compatible base URL, with or without an API key."},
     # ---- agent CLIs ---------------------------------------------------------------
+    {"id": "atlas_runtime", "label": "Atlas Runtime", "kind": "hermes_cli", "category": "cli",
+     "note": "Hermes agent runtime with web search, file tools, and project work."},
     {"id": "claude_code", "label": "Claude Code CLI", "kind": "claude_code", "category": "cli",
      "note": "Runs `claude -p` in an isolated worktree with your Claude sign-in."},
     {"id": "codex_cli", "label": "Codex CLI", "kind": "codex_cli", "category": "cli",

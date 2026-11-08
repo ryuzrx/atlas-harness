@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { SlidersHorizontal, Palette, MessageSquare, Bell, Keyboard, Layers, Users, UsersRound, Play, ShieldCheck, HardDrive, Plug, Wrench, Info, Download, FolderKanban, Sparkles, Puzzle, Webhook, Search, X } from "lucide-react";
+import { SlidersHorizontal, Palette, MessageSquare, Bell, Keyboard, Layers, Users, Play, ShieldCheck, HardDrive, Plug, Wrench, Info, Download, FolderKanban, Sparkles, Puzzle, Webhook, Search, X } from "lucide-react";
 import { api, useApi } from "../api";
 import { useStore } from "../store";
 import { ModelPicker } from "../components/Inspector";
@@ -12,15 +12,15 @@ import { HooksPanel, PluginsPanel, SkillsPanel } from "../components/ExtensionsS
 import { ModelFolder } from "../components/ModelFolder";
 import { McpIntegrations } from "../components/McpIntegrations";
 
-const SECTIONS = ["General", "Appearance", "Chat", "Notifications", "Keyboard shortcuts", "Import", "Projects", "Models", "Agents", "Teams", "Execution", "Permissions", "Storage", "Skills", "Plugins", "Hooks", "Integrations", "Advanced", "About & legal"] as const;
+const SECTIONS = ["General", "Appearance", "Chat", "Notifications", "Keyboard shortcuts", "Import", "Projects", "Models", "Agents", "Execution", "Permissions", "Storage", "Skills", "Plugins", "Hooks", "Integrations", "Advanced", "About & legal"] as const;
 type Section = typeof SECTIONS[number];
 const GROUPS: { label: string; items: { id: Section; icon: React.ElementType }[] }[] = [
   { label: "Personal", items: [{ id: "General", icon: SlidersHorizontal }, { id: "Appearance", icon: Palette }, { id: "Chat", icon: MessageSquare }, { id: "Notifications", icon: Bell }, { id: "Keyboard shortcuts", icon: Keyboard }, { id: "Import", icon: Download }] },
-  { label: "Workspace", items: [{ id: "Projects", icon: FolderKanban }, { id: "Models", icon: Layers }, { id: "Agents", icon: Users }, { id: "Teams", icon: UsersRound }, { id: "Execution", icon: Play }, { id: "Permissions", icon: ShieldCheck }, { id: "Storage", icon: HardDrive }] },
+  { label: "Workspace", items: [{ id: "Projects", icon: FolderKanban }, { id: "Models", icon: Layers }, { id: "Agents", icon: Users }, { id: "Execution", icon: Play }, { id: "Permissions", icon: ShieldCheck }, { id: "Storage", icon: HardDrive }] },
   { label: "Extensions", items: [{ id: "Skills", icon: Sparkles }, { id: "Plugins", icon: Puzzle }, { id: "Hooks", icon: Webhook }, { id: "Integrations", icon: Plug }] },
   { label: "Atlas", items: [{ id: "Advanced", icon: Wrench }, { id: "About & legal", icon: Info }] },
 ];
-const SHORTCUT_LABELS: Record<string, string> = { palette: "Command palette", new_task: "New chat", toggle_sidebar: "Toggle sidebar", overview: "Chat", teams: "Teams", agents: "Agents", settings: "Settings" };
+const SHORTCUT_LABELS: Record<string, string> = { palette: "Command palette", new_task: "New chat", toggle_sidebar: "Toggle sidebar", overview: "Chat", agents: "Agents", settings: "Settings" };
 
 function Row({ label, hint, children }: { label: string; hint?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -206,23 +206,12 @@ export function Settings() {
               </div>
             </Group>
           </>}
-          {section === "Teams" && <>
-            <Group title="Planning">
-              <Row label="Review the plan first" hint="Pause after the lead plans, so you can approve the tasks before anything runs.">{tog("execution.require_plan_approval")}</Row>
-              <Row label="Work on separate branches" hint="Each coding task gets its own branch, so your files stay safe. Recommended.">{tog("execution.use_worktrees")}</Row>
-            </Group>
-            <Group title="Creating teams">
-              <Row label="Start from" hint="The template selected when you create a new team.">
-                <Select className="!w-48" value={settings["teams.default_template"] || "engineering"} onChange={(e) => set("teams.default_template")(e.target.value)}>
-                  {Object.entries(meta?.templates || { engineering: { name: "Engineering" } }).map(([k, v]: any) => <option key={k} value={k}>{v.name}</option>)}<option value="">Blank team</option></Select></Row>
-            </Group>
-            <Group title="Safety">
-              <Row label="Confirm before deleting a team" hint="Task history is always kept.">
-                <Toggle checked={settings["teams.confirm_delete"] !== false} onChange={set("teams.confirm_delete")} label="teams.confirm_delete" /></Row>
-            </Group>
-          </>}
           {section === "Execution" && <>
-            <Row label="Concurrent tasks" hint="Tasks (agents) that may run at once across all teams.">{num("execution.max_concurrent_tasks", 1, 16)}</Row>
+            <Group title="Planning">
+              <Row label="Review agent plans first" hint="Pause after agents plan larger work so you can review it before execution.">{tog("execution.require_plan_approval")}</Row>
+              <Row label="Work on separate branches" hint="Coding tasks use isolated branches to protect your project files.">{tog("execution.use_worktrees")}</Row>
+            </Group>
+            <Row label="Concurrent tasks" hint="Number of agent tasks allowed to run at once.">{num("execution.max_concurrent_tasks", 1, 16)}</Row>
             <Row label="Concurrent inference requests per provider" hint="Agents share loaded models; extra requests queue. Keep at 1–2 on 24 GB machines.">{num("execution.max_concurrent_inference", 1, 8)}</Row>
             <Row label="Command timeout (s)">{num("execution.command_timeout_s", 5, 3600)}</Row>
             <Row label="Task timeout (s)">{num("execution.task_timeout_s", 30, 86400)}</Row>
