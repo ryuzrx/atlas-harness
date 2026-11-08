@@ -36,6 +36,30 @@ MAX_ATTACHMENT_CHARS = 200_000
 MAX_IMAGE_CHARS = 6_000_000
 MAX_UPLOAD_BYTES = 2 * 1024 ** 3   # big files are streamed to disk and read with tools, not pasted into the prompt
 CHAT_TOOL_BLOCK = re.compile(r"```(?:tool|tool_call)\s*\n(.*?)\n?```", re.S)
+WORKSPACE_INTENT = re.compile(
+    r"\b(?:file|files|folder|directory|project|repo|repository|code|source|readme|script|path|terminal|command|shell|"
+    r"git|branch|test|tests|error|bug|log|logs|codebase)\b|"
+    r"\b(?:edit|fix|change|modify|inspect|debug|implement|build|compile|deploy|install|commit|push|delete|remove|rename)\b|"
+    r"\b(?:read|open|run|write|create)\s+(?:the\s+|this\s+|that\s+|my\s+|a\s+|an\s+)?"
+    r"(?:file|folder|directory|project|repo|repository|code|source|readme|script|path|terminal|command|test|tests)\b|"
+    r"(?:^|[\s`])(?:\./|~/|/|[\w.-]+\.(?:py|js|jsx|ts|tsx|swift|rs|go|java|json|md|txt|pdf))",
+    re.I,
+)
+FRESH_WEB_INTENT = re.compile(
+    r"\b(?:current(?:ly)?|latest|newest|today|recent(?:ly)?|right now|this week|this month|"
+    r"real[- ]time|news|weather|price|pricing|stock|score|schedule|release|released|version|update|"
+    r"look up|search (?:the )?web|browse|source|sources|citation|citations|fact[- ]check|verify online|"
+    r"openai|anthropic|gemini|claude|gpt[- ]?\d|grok|xai)\b",
+    re.I,
+)
+
+
+def _needs_workspace_tools(content: str, attachments: List[Dict[str, Any]]) -> bool:
+    return bool(attachments) or bool(WORKSPACE_INTENT.search(content or ""))
+
+
+def _needs_web_search(content: str) -> bool:
+    return bool(FRESH_WEB_INTENT.search(content or ""))
 
 
 def uploads_dir() -> Path:
@@ -222,6 +246,14 @@ class ChatService:
             tools = ["web"]
         else:
             tools = []
+        # A project or Web search toggle grants tools when they are relevant; it should not
+        # force ordinary conversation through an agent plan/tool/finish loop. File and fresh
+        # information requests still take the full tool path, with all existing permissions.
+        if mode == "model" and not _needs_workspace_tools(content, attachments):
+            if cfg.get("project_id"):
+                tools = [tool for tool in tools if tool == "web"]
+            if web_search and not _needs_web_search(content):
+                tools = [tool for tool in tools if tool != "web"]
         compare_targets: List[Dict[str, str]] = []
         requested_compare = cfg.get("compare_models")
         if mode == "model" and isinstance(requested_compare, list) and len(requested_compare) > 1:
@@ -335,10 +367,11 @@ class ChatService:
                          **({"compare_group": compare_group, "compare_count": len(compare_targets)} if compare_group else {})},
                 "created_at": now()}) for target in compare_targets]
             asst = assistants[0]
-            messages = self._model_messages(cid, cfg, asst["id"])
+            model_cfg = {**cfg, "tools": tools}
+            messages = self._model_messages(cid, model_cfg, asst["id"])
             for response, target in zip(assistants, compare_targets):
                 self.streams[response["id"]] = asyncio.ensure_future(
-                    self._stream(cid, response["id"], target["provider_id"], target["model"], messages, cfg))
+                    self._stream(cid, response["id"], target["provider_id"], target["model"], messages, model_cfg))
         self.bus.changed("conversation", cid)
         return {"user": user, "assistant": asst, **({"assistants": assistants} if not task and len(compare_targets) > 1 else {})}
 
@@ -432,7 +465,7 @@ class ChatService:
         async def loop() -> None:
             try:
                 while True:
-                    await asyncio.sleep(1.0)
+                    await asyncio.sleep(0.25)
                     task = self.db.get("tasks", task_id)
                     msg = self.db.get("chat_messages", mid)
                     if not msg:
