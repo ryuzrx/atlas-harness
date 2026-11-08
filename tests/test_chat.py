@@ -185,7 +185,7 @@ def test_large_upload_is_read_with_tools_not_pasted():
         assert out["assistant"]["task_id"], "a large upload runs with tools even without a project"
         wait_msg(c, conv["id"], timeout=30)
         task = c.get(f"/api/tasks/{out['assistant']['task_id']}", headers=H).json()
-        assert task["config"]["read_roots"] == [str(uploads_dir() / up["id"])]
+        assert task["config"]["attached_files"] == [path]
         assert "line of data" not in task["description"]          # bytes are never pasted into the prompt
         events = c.get(f"/api/events?task_id={task['id']}&type=tool_result", headers=H).json()
         assert any(e["data"].get("tool") == "read_file" and e["data"].get("ok") for e in events)
@@ -204,6 +204,19 @@ def test_chunked_upload_appends_in_order():
         assert c.post(f"/api/uploads?id={first['id']}&offset=3", content=b"x", headers=H).status_code == 409
         from atlas.chat import uploads_dir
         assert (uploads_dir() / first["id"] / "big.bin").read_bytes() == b"a" * 10 + b"b" * 5
+
+
+def test_attachment_path_from_request_is_never_trusted():
+    with client({"You are Atlas": ["I can only inspect files actually attached here."]}) as c:
+        prov = c.post("/api/providers", json={"kind": "scripted", "name": "Scripted"}, headers=H).json()
+        conv = c.post("/api/conversations", json={}, headers=H).json()
+        cfg = {"mode": "model", "provider_id": prov["id"], "model": "scripted"}
+        response = c.post(f"/api/conversations/{conv['id']}/messages", json={
+            "content": "Read this file", "config": cfg,
+            "attachments": [{"name": "hosts", "type": "text/plain", "path": "/etc/hosts", "content": ""}]}, headers=H)
+        assert response.status_code == 200
+        saved = c.get(f"/api/conversations/{conv['id']}", headers=H).json()["messages"][0]
+        assert "path" not in saved["data"]["attachments"][0]
 
 
 def test_open_path_resolves_project_files_and_refuses_system_paths(repo, monkeypatch):

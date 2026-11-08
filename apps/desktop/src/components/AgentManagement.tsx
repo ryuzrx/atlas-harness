@@ -48,7 +48,8 @@ export function AgentRoster({ agents, loading, onReload, showTeam = false, empty
       </button>
       <Menu trigger={<button disabled={busy !== null} aria-label={`Actions for ${agent.name}`} className="h-8 w-8 shrink-0 rounded-md hover:bg-active flex items-center justify-center text-ink-2"><MoreHorizontal size={16} /></button>} items={[
         { label: "Edit agent", onClick: () => select({ kind: "agent", id: agent.id }) },
-        { label: agent.status === "paused" ? "Resume" : "Pause", disabled: busy !== null, onClick: () => { void action(agent, agent.status === "paused" ? "resume" : "pause"); } },
+        { label: agent.status === "paused" ? "Enable agent" : agent.current_task ? "Pause after current step" : "Disable agent",
+          disabled: busy !== null, onClick: () => { void action(agent, agent.status === "paused" ? "resume" : "pause"); } },
         { label: "Duplicate", disabled: busy !== null, onClick: () => { void action(agent, "clone"); } },
       ]} />
     </div>)}

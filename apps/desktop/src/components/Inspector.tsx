@@ -62,7 +62,7 @@ export function AgentEditor({ agent, onSaved }: { agent: Agent; onSaved?: () => 
     params: a.params, tools: a.tools, config: a.config } }), "Agent saved").then((result) => { if (result) onSaved?.(); });
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-1 min-[1050px]:grid-cols-2 gap-2.5">
         <Field label="Name"><Input value={a.name} onChange={(e) => set({ name: e.target.value })} /></Field>
         <Field label="Role" hint="Used by the lead when delegating."><Input value={a.role} onChange={(e) => set({ role: e.target.value })} /></Field>
       </div>
@@ -73,7 +73,7 @@ export function AgentEditor({ agent, onSaved }: { agent: Agent; onSaved?: () => 
       <details className="rounded-lg border border-line p-3">
         <summary className="cursor-pointer text-sm text-ink-2">Advanced settings & permissions</summary>
         <div className="mt-4 space-y-4">
-          <div className="grid grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-1 min-[740px]:grid-cols-2 min-[1200px]:grid-cols-3 gap-2.5">
             <Field label="Temperature"><Input type="number" step="0.1" min="0" max="2" value={a.params.temperature ?? ""} onChange={(e) => prm("temperature", e.target.value === "" ? undefined : +e.target.value)} /></Field>
             <Field label="Max output tokens"><Input type="number" value={a.params.max_tokens ?? ""} placeholder="default" onChange={(e) => prm("max_tokens", e.target.value ? +e.target.value : undefined)} /></Field>
             <Field label="Context budget"><Input type="number" value={a.config.context_budget ?? 16000} onChange={(e) => cfg("context_budget", +e.target.value)} /></Field>
@@ -124,8 +124,11 @@ function AgentInspector({ id }: { id: string }) {
       <div className="flex flex-wrap gap-1.5 mt-3">
         {a.status === "paused"
           ? <Button size="sm" icon={<Play size={13} />} onClick={() => run("r", () => api(`/agents/${id}/resume`, { body: {} })).then(reload)}>Resume</Button>
-          : <Button size="sm" icon={<Pause size={13} />} onClick={() => run("p", () => api(`/agents/${id}/pause`, { body: {} }), "Agent paused; current step finishes first").then(reload)}>Pause</Button>}
-        <Button size="sm" icon={<Square size={12} />} disabled={!a.current_task} onClick={() => run("c", () => api(`/agents/${id}/cancel`, { body: {} }), "Cancelled")}>Cancel task</Button>
+          : a.current_task && ["running", "planning", "reviewing", "waiting_approval"].includes(a.current_task.status)
+            ? <Button size="sm" icon={<Pause size={13} />} onClick={() => run("p", () => api(`/agents/${id}/pause`, { body: {} }), "Agent paused; current step finishes first").then(reload)}>Pause</Button>
+            : <Button size="sm" icon={<Pause size={13} />} onClick={() => run("p", () => api(`/agents/${id}/pause`, { body: {} }), "Agent disabled; it won't receive new work").then(reload)}>Disable</Button>}
+        {a.current_task && ["running", "planning", "reviewing", "waiting_approval"].includes(a.current_task.status) &&
+          <Button size="sm" icon={<Square size={12} />} onClick={() => run("c", () => api(`/agents/${id}/cancel`, { body: {} }), "Cancelled")}>Cancel task</Button>}
         <Menu trigger={<Button size="sm" icon={<MoreHorizontal size={14} />}>More</Button>} items={[
           { label: "Duplicate", disabled: busy !== null, onClick: () => { void run("cl", () => api(`/agents/${id}/clone`, { body: {} }), "Agent duplicated"); } },
           { label: "Move to team…", onClick: () => setMoving(true) },

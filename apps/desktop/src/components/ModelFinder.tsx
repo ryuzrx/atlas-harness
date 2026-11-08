@@ -55,7 +55,7 @@ export function ModelFinder({ open, onClose, lib, installed, onPick }: { open: b
     const brand = (brandFor(m.name)?.label || "").toLowerCase();
     const note = m.note.split(", ").filter((x) => !brand.includes(x.toLowerCase())).join(", ");
     const lead = note ? note.charAt(0).toUpperCase() + note.slice(1) + ". " : "";
-    return `${lead}A ${m.size} download that uses about ${(gb(m.size) * 1.2).toFixed(1)} GB of your ${Math.round(ram)} GB memory while running.`;
+    return `${lead}${m.size} is the download size. Actual memory use depends on context length, quantization, and runtime; Atlas has not benchmarked this model on your Mac.`;
   };
   const Opt = ({ on, label, hint, onClick }: { on: boolean; label: string; hint: string; onClick: () => void }) => (
     <button onClick={onClick} aria-pressed={on} className={cx("text-left rounded-lg border p-3.5 transition-colors", on ? "border-ink bg-selected" : "border-line hover:bg-hover")}>
@@ -82,7 +82,7 @@ export function ModelFinder({ open, onClose, lib, installed, onPick }: { open: b
         : <><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="primary" disabled={!hw} onClick={() => setDone(true)}>Recommend</Button></>}>
       {!done ? (
         <div className="space-y-6">
-          <p className="text-base text-ink-2">{hw ? <>Your Mac has <span className="text-ink">{Math.round(ram)} GB</span> of memory{hw.chip ? <> and a <span className="text-ink">{hw.chip}</span></> : null}. Answer two quick questions and Atlas picks a model that runs well on it.</> : "Checking your Mac…"}</p>
+          <p className="text-base text-ink-2">{hw ? <>Your Mac has <span className="text-ink">{Math.round(ram)} GB</span> of memory{hw.chip ? <> and a <span className="text-ink">{hw.chip}</span></> : null}. Atlas ranks available downloads by size and your preference. Actual runtime fit varies by model and context length.</> : "Checking your Mac…"}</p>
           <div><div className="text-base text-ink mb-2">What will you use it for?</div><div className="grid grid-cols-2 gap-2.5">{USES.map((u) => <Opt key={u.id} on={use === u.id} label={u.label} hint={u.hint} onClick={() => setUse(u.id)} />)}</div></div>
           <div><div className="text-base text-ink mb-2">What matters more?</div><div className="grid grid-cols-3 gap-2.5">{PRIOS.map((p) => <Opt key={p.id} on={prio === p.id} label={p.label} hint={p.hint} onClick={() => setPrio(p.id)} />)}</div></div>
         </div>
@@ -90,7 +90,7 @@ export function ModelFinder({ open, onClose, lib, installed, onPick }: { open: b
         <div className="space-y-4">
           <div className="text-sm text-ink-3">Best match for {USES.find((u) => u.id === use)!.label.toLowerCase()}, {PRIOS.find((p) => p.id === prio)!.label.toLowerCase()}, on {Math.round(ram)} GB</div>
           <Card m={rec.pick} primary />
-          {rec.tooBig && <p className="text-sm text-warn">Nothing in this category fits comfortably in your memory. This is the smallest option and may run slowly.</p>}
+          {rec.tooBig && <p className="text-sm text-warn">No model in this category falls within Atlas's download-size estimate for your selected preference. The smallest option may still need more memory at runtime.</p>}
           {rec.alts.length > 0 && <><div className="text-sm text-ink-3 pt-2">Other good options</div><div className="space-y-2.5">{rec.alts.map((m) => <Card key={m.name} m={m} />)}</div></>}
         </div>
       ) : <p className="text-base text-ink-2">No model in the library fits that combination on this Mac. Try "Fast replies" or another use.</p>}

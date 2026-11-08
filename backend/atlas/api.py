@@ -1130,9 +1130,11 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
         The chat then refers to it by id instead of sending its bytes."""
         from .chat import MAX_UPLOAD_BYTES, uploads_dir
         if id:
+            if not re.fullmatch(r"up_[a-f0-9]{12}", id):
+                raise HTTPException(404, "Upload not found. Attach the file again.")
             folder = uploads_dir() / Path(id).name
             files = [f for f in folder.iterdir() if f.is_file()] if folder.is_dir() else []
-            if not files:
+            if folder.is_symlink() or not files or len(files) != 1 or files[0].is_symlink():
                 raise HTTPException(404, "Upload not found. Attach the file again.")
             dest, fresh = files[0], False
             if dest.stat().st_size != offset:
@@ -1140,7 +1142,7 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
         else:
             uid = new_id("up")
             folder = uploads_dir() / uid
-            folder.mkdir(parents=True)
+            folder.mkdir(parents=True, mode=0o700)
             dest, fresh = folder / (Path(name).name.strip() or "file"), True
         size = dest.stat().st_size if dest.exists() else 0
         if size + int(request.headers.get("content-length") or 0) > MAX_UPLOAD_BYTES:
@@ -1148,7 +1150,9 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
                 shutil.rmtree(folder, ignore_errors=True)
             raise HTTPException(413, "Files can be up to 2 GB.")
         try:
-            with open(dest, "ab") as f:
+            fd = os.open(dest, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "ab") as f:
                 async for chunk in request.stream():
                     size += len(chunk)
                     if size > MAX_UPLOAD_BYTES:

@@ -38,6 +38,48 @@ TRANSITIONS: Dict[str, Set[str]] = {
 }
 
 
+def authorized_chat_attachments(db: DB, task_config: Dict[str, Any]) -> List[Path]:
+    """Intersect task config with paths recorded on user messages in that chat.
+
+    Task creation is also exposed through the API, so a caller-supplied path list is not
+    itself authorization to read arbitrary files on disk.
+    """
+    conversation_id = task_config.get("conversation_id")
+    if not isinstance(conversation_id, str) or not conversation_id:
+        return []
+    saved: Set[str] = set()
+    for message in db.q("SELECT data FROM chat_messages WHERE conversation_id=? AND role='user'", (conversation_id,)):
+        for attachment in (message.get("data") or {}).get("attachments") or []:
+            if attachment.get("path"):
+                try:
+                    saved.add(str(Path(attachment["path"]).resolve(strict=True)))
+                except (OSError, RuntimeError):
+                    continue
+    requested: List[Path] = []
+    for value in task_config.get("attached_files") or []:
+        try:
+            requested.append(Path(value))
+        except (TypeError, ValueError):
+            continue
+    # Compatibility with tasks persisted before attached_files became an exact list.
+    for value in task_config.get("read_roots") or []:
+        try:
+            root = Path(value)
+            if root.is_dir():
+                requested.extend(root.iterdir())
+        except (OSError, TypeError, ValueError):
+            continue
+    out: List[Path] = []
+    for candidate in requested:
+        try:
+            resolved = candidate.resolve(strict=True)
+            if str(resolved) in saved and resolved.is_file() and not candidate.is_symlink() and resolved not in out:
+                out.append(resolved)
+        except (OSError, RuntimeError):
+            continue
+    return out
+
+
 class InvalidTransition(Exception):
     pass
 
@@ -919,11 +961,13 @@ depends on the work it checks; no cycles."""
             return self._message(task, agent["id"], rec["id"] if rec else None, type_, body)
 
         mcp_tools = await self.mcp.list_tools() if ("mcp" in perms and self.mcp.enabled) else []
+        task_config = task.get("config") or {}
+        attached_files = authorized_chat_attachments(self.db, task_config)
         ctx = ToolContext(workspace=workspace, permissions=perms, settings=settings, request_approval=request_approval,
                           remember=remember, send_message=send_message,
                           mcp_call=self.mcp.call if mcp_tools else None, mcp_tools=mcp_tools, ask_user=ask_user,
                           computer_use=computer_use if "computer" in perms else None,
-                          read_roots=[Path(x) for x in (task.get("config") or {}).get("read_roots") or [] if Path(x).is_dir()])
+                          attached_files=attached_files)
 
         def checkpoint(step, state):
             self.db.x("INSERT INTO checkpoints(task_id,step,state,at) VALUES(?,?,?,?)", (task["id"], step, json.dumps(state), now()))

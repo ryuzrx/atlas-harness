@@ -8,6 +8,12 @@ import { cx } from "./ui";
 interface Msg { role: string; content: string; status?: string; task_id?: string; data?: Record<string, any> }
 
 const fmt = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n)));
+const tokenCount = (usage: Record<string, any> | undefined, ...keys: string[]) => {
+  for (const key of keys) { const raw = usage?.[key]; if (raw == null || raw === "") continue; const value = Number(raw); if (Number.isFinite(value) && value >= 0) return value; }
+  return undefined;
+};
+const nestedTokenCount = (usage: Record<string, any> | undefined, section: string, ...keys: string[]) =>
+  tokenCount(usage?.[section], ...keys);
 
 function Section({ title, children, right }: { title: string; children: React.ReactNode; right?: React.ReactNode }) {
   return (
@@ -35,11 +41,19 @@ export const SessionPanel = React.memo(function SessionPanel({ messages, cfg, on
 
   const model = models.find((m) => m.provider_id === cfg.provider_id && m.name === cfg.model);
   const windowSize = model?.context_length || 0;
-  const lastReply = [...messages].reverse().find((m) => m.role === "assistant" && m.data?.usage?.prompt_tokens);
-  const measured = lastReply ? Number(lastReply.data!.usage.prompt_tokens) + Number(lastReply.data!.usage.completion_tokens || 0) : 0;
-  const estimated = Math.ceil(messages.reduce((a, m) => a + (m.content || "").length, 0) / 4);
-  const used = measured || estimated;
-  const pct = windowSize ? Math.min(100, (used / windowSize) * 100) : 0;
+  const measuredUsage = messages.filter((m) => m.role === "assistant" && m.data?.usage && m.data.usage.measured !== false)
+    .map((m) => m.data!.usage as Record<string, any>);
+  const lastUsage = measuredUsage.at(-1);
+  const requestInput = tokenCount(lastUsage, "prompt_tokens", "input_tokens");
+  const requestOutput = tokenCount(lastUsage, "completion_tokens", "output_tokens");
+  const cachedInput = tokenCount(lastUsage, "cached_input_tokens", "cached_tokens") ??
+    nestedTokenCount(lastUsage, "prompt_tokens_details", "cached_tokens") ??
+    nestedTokenCount(lastUsage, "input_tokens_details", "cached_tokens");
+  const reasoningOutput = nestedTokenCount(lastUsage, "completion_tokens_details", "reasoning_tokens") ??
+    nestedTokenCount(lastUsage, "output_tokens_details", "reasoning_tokens");
+  const sessionInput = measuredUsage.reduce((sum, u) => sum + (tokenCount(u, "prompt_tokens", "input_tokens") || 0), 0);
+  const sessionOutput = measuredUsage.reduce((sum, u) => sum + (tokenCount(u, "completion_tokens", "output_tokens") || 0), 0);
+  const hasRequestUsage = requestInput !== undefined || requestOutput !== undefined;
   const servers: { name: string; running: boolean; tools: number }[] = mcp?.servers || [];
   const connected = servers.filter((s) => s.running);
 
@@ -80,18 +94,21 @@ export const SessionPanel = React.memo(function SessionPanel({ messages, cfg, on
       </Section>
 
       <Section title="Context">
-        <div className="flex items-baseline justify-between text-sm">
-          <span className="text-ink">{windowSize ? `${Math.round(pct)}% used` : `${fmt(used)} tokens`}</span>
-          {windowSize ? <span className="text-ink-3 tnum">{fmt(used)} / {fmt(windowSize)}</span> : null}
-        </div>
-        <div className="mt-2 h-1.5 rounded-full bg-active overflow-hidden"><div className="h-full rounded-full bg-accent transition-[width] duration-300 ease-[var(--ease)]" style={{ width: `${windowSize ? Math.max(pct, 1) : 0}%` }} /></div>
         <dl className="mt-3 space-y-1.5 text-sm">
           <div className="flex justify-between"><dt className="text-ink-2">Messages</dt><dd className="tnum text-ink-2">{messages.length}</dd></div>
-          <div className="flex justify-between"><dt className="text-ink-2">{measured ? "Last request (measured)" : "Conversation (estimated)"}</dt><dd className="tnum text-ink-2">{fmt(used)}</dd></div>
-          {windowSize ? <div className="flex justify-between"><dt className="text-ink-2">Free space</dt><dd className="tnum text-ink-2">{fmt(Math.max(0, windowSize - used))}</dd></div> : null}
+          {hasRequestUsage ? <>
+            <div className="flex justify-between"><dt className="text-ink-2">Last request · input</dt><dd className="tnum text-ink-2">{requestInput === undefined ? "—" : `${fmt(requestInput)} reported`}</dd></div>
+            <div className="flex justify-between"><dt className="text-ink-2">Last request · output</dt><dd className="tnum text-ink-2">{requestOutput === undefined ? "—" : `${fmt(requestOutput)} reported`}</dd></div>
+            <div className="flex justify-between"><dt className="text-ink-2">Session total · input</dt><dd className="tnum text-ink-2">{fmt(sessionInput)}</dd></div>
+            <div className="flex justify-between"><dt className="text-ink-2">Session total · output</dt><dd className="tnum text-ink-2">{fmt(sessionOutput)}</dd></div>
+            {cachedInput !== undefined && <div className="flex justify-between"><dt className="text-ink-2">Cached input · last request</dt><dd className="tnum text-ink-2">{fmt(cachedInput)}</dd></div>}
+            {reasoningOutput !== undefined && <div className="flex justify-between"><dt className="text-ink-2">Reasoning · last request</dt><dd className="tnum text-ink-2">{fmt(reasoningOutput)}</dd></div>}
+          </> : <div className="text-ink-3">Token usage is not reported by this provider.</div>}
+          <div className="flex justify-between"><dt className="text-ink-2">Active context</dt><dd className="text-ink-3">Not reported</dd></div>
+          {windowSize ? <div className="flex justify-between"><dt className="text-ink-2">Context window</dt><dd className="tnum text-ink-2">{fmt(windowSize)}</dd></div> : null}
         </dl>
-        {!!windowSize && model?.details?.context_estimated && <div className="mt-3 text-xs text-ink-3">Window size is Atlas's estimate; the provider doesn't report it.</div>}
-        {!windowSize && <div className="mt-3 text-xs text-ink-3">This model doesn't report its context window, and Atlas has no estimate for it.</div>}
+        {!!windowSize && <div className="mt-3 text-xs text-ink-3">{model?.details?.context_estimated ? "Context window is an Atlas estimate." : "Context window supplied by the provider."} Active context and remaining capacity cannot be determined from this provider's response.</div>}
+        {!windowSize && <div className="mt-3 text-xs text-ink-3">This provider does not report a context window or active context usage.</div>}
       </Section>
 
       <Section title="Connectors">

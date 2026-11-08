@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
 import secrets
 import socket
@@ -17,6 +18,15 @@ def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
+
+async def stop_when_supervisor_exits(server: uvicorn.Server, supervisor_pid: int) -> None:
+    """Stop an orphaned backend when its native app is force-quit."""
+    while not server.should_exit:
+        await asyncio.sleep(1)
+        if os.getppid() != supervisor_pid:
+            server.should_exit = True
+            return
 
 
 def main() -> None:
@@ -43,6 +53,12 @@ def main() -> None:
         print(f"ATLAS_READY {port}", flush=True)
         if not os.environ.get("ATLAS_TOKEN"):
             print(f"ATLAS_TOKEN {token}", flush=True)
+        try:
+            supervisor_pid = int(os.environ.get("ATLAS_SUPERVISOR_PID", ""))
+        except ValueError:
+            supervisor_pid = 0
+        if supervisor_pid and os.getppid() == supervisor_pid:
+            asyncio.create_task(stop_when_supervisor_exits(server, supervisor_pid))
 
     server.startup = startup  # type: ignore[assignment]
     server.run()

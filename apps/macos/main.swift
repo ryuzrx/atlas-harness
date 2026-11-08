@@ -10,6 +10,7 @@ import ImageIO
 import UniformTypeIdentifiers
 import CoreGraphics
 import ApplicationServices
+import ScreenCaptureKit
 
 final class DragWebView: WKWebView {
     var lastMouseDown: NSEvent?
@@ -187,6 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKSc
         p.arguments = ["-c", bootstrap, backendPath, pythonLibPath, "--static", res.appendingPathComponent("ui").path]
         var env = ProcessInfo.processInfo.environment
         env["ATLAS_TOKEN"] = token
+        env["ATLAS_SUPERVISOR_PID"] = String(ProcessInfo.processInfo.processIdentifier)
         env["PYTHONPATH"] = res.appendingPathComponent("backend").path + ":" + res.appendingPathComponent("pylib").path
         env["PYTHONNOUSERSITE"] = "1"
         env["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -359,21 +361,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKSc
                 reply(id, ["error": "Atlas Computer Use is paused while the Mac is locked."])
                 return
             }
-            guard let image = CGDisplayCreateImage(CGMainDisplayID()) else {
-                reply(id, ["error": "The active display could not be captured. Check Atlas's Screen Recording permission."])
+            guard #available(macOS 14.0, *) else {
+                reply(id, ["error": "Screen capture requires macOS 14 or later."])
                 return
             }
-            let width = image.width, height = image.height
-            let bounds = CGDisplayBounds(CGMainDisplayID())
-            guard let bitmap = NSBitmapImageRep(cgImage: image).representation(using: .jpeg, properties: [.compressionFactor: 0.78]) else {
-                reply(id, ["error": "Could not encode the screen capture."])
-                return
-            }
-            lastCaptureSize = CGSize(width: width, height: height)
-            lastCaptureBounds = bounds
-            lastCaptureAt = Date()
-            reply(id, ["image": ["mime_type": "image/jpeg", "data": bitmap.base64EncodedString()],
-                       "message": "Captured the main display."])
+            Task { await captureMainDisplay(id: id) }
         case "open_preview":
             guard let value = action["url"] as? String,
                   let parts = URLComponents(string: value), parts.scheme == "http",
@@ -432,6 +424,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKSc
             reply(id, ["message": "Scrolled the visible screen region."])
         default:
             reply(id, ["error": "Unsupported computer action."])
+        }
+    }
+
+    @available(macOS 14.0, *)
+    func captureMainDisplay(id: String) async {
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) ?? content.displays.first else {
+                DispatchQueue.main.async { self.reply(id, ["error": "No display is available to capture."]) }
+                return
+            }
+            let filter = SCContentFilter(display: display, excludingWindows: [])
+            let configuration = SCStreamConfiguration()
+            configuration.width = display.width
+            configuration.height = display.height
+            configuration.showsCursor = true
+            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+            DispatchQueue.main.async {
+                guard let bitmap = NSBitmapImageRep(cgImage: image).representation(using: .jpeg, properties: [.compressionFactor: 0.78]) else {
+                    self.reply(id, ["error": "Could not encode the screen capture."])
+                    return
+                }
+                self.lastCaptureSize = CGSize(width: image.width, height: image.height)
+                self.lastCaptureBounds = CGDisplayBounds(display.displayID)
+                self.lastCaptureAt = Date()
+                self.reply(id, ["image": ["mime_type": "image/jpeg", "data": bitmap.base64EncodedString()],
+                                "message": "Captured the main display."])
+            }
+        } catch {
+            DispatchQueue.main.async {
+                self.reply(id, ["error": "Screen capture failed. Check Atlas's Screen Recording permission and try again."])
+            }
         }
     }
 

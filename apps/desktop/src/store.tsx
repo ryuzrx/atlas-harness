@@ -53,11 +53,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const { data: convList } = useApi<{ id: string; config?: Record<string, any> }[]>("/conversations", ["conversation"]);
   const [lastMode, setLastMode] = useState<Mode>(() => (localStorage.getItem("atlas_mode") === "work" ? "work" : "chat"));
-  // A chat that belongs to a project is part of Work: opening it must not flip the sidebar to Chat.
+  // A conversation may have a project attached without being in Work. The selected
+  // navigation mode is explicit UI state; workspace context alone must never route it.
   const openChat = route.name === "chat" && route.id ? convList?.find((c) => c.id === route.id) : undefined;
   const isProjectChat = !!openChat?.config?.project_id;
   const routeMode: Mode | null = route.name === "chat"
-    ? (route.id && !openChat ? lastMode : isProjectChat ? "work" : "chat")
+    ? lastMode
     : route.name === "overview" ? "chat" : route.name === "projects" ? "work" : null;
   const mode: Mode = routeMode || lastMode;
   useEffect(() => {
@@ -80,6 +81,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [settings]);
   const switchMode = (m: Mode) => {
     if (m === mode && routeMode === m) return;
+    setLastMode(m);
+    localStorage.setItem("atlas_mode", m);
     if (m === "chat") go({ name: "chat", id: localStorage.getItem("atlas_last_chat") || undefined });
     else go({ name: "projects" });
   };
