@@ -39,6 +39,7 @@ final class AtlasBrowserWindow: NSObject, WKNavigationDelegate, WKUIDelegate {
     private let backButton = NSButton(title: "‹", target: nil, action: nil)
     private let forwardButton = NSButton(title: "›", target: nil, action: nil)
     private let reloadButton = NSButton(title: "↻", target: nil, action: nil)
+    private let externalButton = NSButton(title: "", target: nil, action: nil)
     private let tabBar = NSStackView()
     private let tabScrollView = NSScrollView()
     private let pageContainer = NSView()
@@ -71,6 +72,14 @@ final class AtlasBrowserWindow: NSObject, WKNavigationDelegate, WKUIDelegate {
             button.setAccessibilityLabel(label)
             toolbar.addArrangedSubview(button)
         }
+        externalButton.target = self
+        externalButton.action = #selector(openInDefaultBrowser)
+        externalButton.image = NSImage(systemSymbolName: "arrow.up.right.square", accessibilityDescription: "Open in default browser")
+        externalButton.bezelStyle = .rounded
+        externalButton.toolTip = "Open this page in your default browser"
+        externalButton.setAccessibilityLabel("Open this page in your default browser")
+        externalButton.isEnabled = false
+        toolbar.addArrangedSubview(externalButton)
         address.placeholderString = "Search Google or enter a website"
         address.font = .systemFont(ofSize: 14)
         address.focusRingType = .default
@@ -240,11 +249,17 @@ final class AtlasBrowserWindow: NSObject, WKNavigationDelegate, WKUIDelegate {
     @objc private func goBack() { activeTab?.webView.goBack() }
     @objc private func goForward() { activeTab?.webView.goForward() }
     @objc private func reload() { activeTab?.webView.reload() }
+    @objc private func openInDefaultBrowser() {
+        guard let url = activeTab?.webView.url,
+              ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return }
+        NSWorkspace.shared.open(url)
+    }
 
     private func updateControls(for tab: AtlasBrowserTab) {
         guard activeTabID == tab.id else { return }
         backButton.isEnabled = tab.webView.canGoBack
         forwardButton.isEnabled = tab.webView.canGoForward
+        externalButton.isEnabled = ["https", "http"].contains(tab.webView.url?.scheme?.lowercased() ?? "")
         if let url = tab.webView.url { address.stringValue = url.absoluteString }
         window.title = tab.title == "New tab" ? "Atlas Browser" : "\(tab.title) — Atlas Browser"
     }
