@@ -143,6 +143,23 @@ def test_project_chat_with_only_project_context_gets_workspace_tools(repo):
         assert set(task["config"]["tool_limit"]) >= {"read", "write", "shell", "git"}
 
 
+def test_chat_agent_auto_approval_setting_is_passed_through(repo):
+    with client({"General assistant": [("finish", {"summary": "ok"}), ("finish", {"summary": "ok"})]}) as c:
+        prov = c.post("/api/providers", json={"kind": "scripted", "name": "Scripted"}, headers=H).json()
+        proj = c.post("/api/projects", json={"path": str(repo)}, headers=H).json()
+        for enabled in (False, True):
+            conv = c.post("/api/conversations", json={}, headers=H).json()
+            cfg = {"mode": "model", "provider_id": prov["id"], "model": "scripted", "tools": ["project"],
+                   "project_id": proj["id"], "auto_approve": enabled, "web_search": True}
+            out = c.post(f"/api/conversations/{conv['id']}/messages", json={"content": "Inspect", "config": cfg}, headers=H)
+            assert out.status_code == 200, out.text
+            task = c.get(f"/api/tasks/{out.json()['assistant']['task_id']}", headers=H).json()
+            assert task["config"]["auto_approve"] is enabled
+            assert task["config"]["web_search"] is True
+            assert "web" in task["config"]["tool_limit"]
+            wait_msg(c, conv["id"], timeout=30)
+
+
 def test_run_media_lists_and_serves_previews_safely(repo):
     script = {"General assistant": [("write_file", {"path": "renders/cube.png", "content": "PNGDATA"}),
                                     ("write_file", {"path": "model.stl", "content": "solid cube\nendsolid cube\n"}),

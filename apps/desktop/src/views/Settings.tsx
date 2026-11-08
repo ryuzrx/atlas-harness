@@ -39,6 +39,39 @@ function Choice({ value, options, onPick }: { value: number | string; options: [
 }
 const ABILITY_LABELS: Record<string, string> = { read: "Read files", write: "Edit files", shell: "Run commands", git: "Use git", memory: "Remember things", messages: "Message teammates", mcp: "Use connected apps" };
 
+function WebSearchConnection() {
+  const { data, reload } = useApi<{ connected: boolean; provider: string }>("/integrations/web-search", ["settings"]);
+  const [key, setKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const toast = useToast();
+  const save = async () => {
+    setSaving(true);
+    try { await api("/integrations/web-search", { method: "PUT", body: { api_key: key } }); setKey(""); await reload(); toast("Web search connected", "ok"); }
+    catch (e: any) { toast(e.message || "Could not connect web search", "bad"); }
+    finally { setSaving(false); }
+  };
+  const disconnect = async () => {
+    setSaving(true);
+    try { await api("/integrations/web-search", { method: "DELETE" }); await reload(); toast("Web search disconnected", "ok"); }
+    catch (e: any) { toast(e.message || "Could not disconnect web search", "bad"); }
+    finally { setSaving(false); }
+  };
+  return <div className="set-row block px-4 py-4">
+    <div className="flex items-start gap-4">
+      <div className="flex-1 min-w-0"><div className="text-sm text-ink">Web search · Tavily</div>
+        <div className="text-xs text-ink-3 mt-0.5">Connect once to let chat agents search current public web pages. The key is stored in macOS Keychain.</div>
+      </div>
+      <Badge tone={data?.connected ? "ok" : "muted"}>{data?.connected ? "Connected" : "Not connected"}</Badge>
+    </div>
+    <div className="flex gap-2 mt-3">
+      <Input type="password" autoComplete="new-password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={data?.connected ? "Enter a new key to replace the saved key" : "Tavily API key"} aria-label="Tavily API key" />
+      <Button size="sm" busy={saving} disabled={!key.trim()} onClick={save}>{data?.connected ? "Replace key" : "Connect"}</Button>
+      {data?.connected && <Button size="sm" busy={saving} onClick={disconnect}>Disconnect</Button>}
+    </div>
+    <div className="text-xs text-ink-3 mt-2">Search results include clickable source URLs. <button className="text-ink-2 hover:text-ink underline" onClick={() => openExternal("https://tavily.com/")}>Get a Tavily API key</button></div>
+  </div>;
+}
+
 export function Settings() {
   const { settings, saveSettings, setSettingsOpen } = useStore();
   const close = () => setSettingsOpen(false);
@@ -244,6 +277,7 @@ export function Settings() {
           {section === "Plugins" && <PluginsPanel />}
           {section === "Hooks" && <HooksPanel />}
           {section === "Integrations" && <div className="pt-1 pb-4">
+            <WebSearchConnection />
             <McpIntegrations servers={settings["integrations.mcp_servers"] || []} status={mcp?.servers || []} saving={mcpSaving} onSave={saveMcp} />
           </div>}
           {section === "About & legal" && <>

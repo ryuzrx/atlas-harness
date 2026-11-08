@@ -9,7 +9,7 @@ import { ChatModelPicker } from "../components/ChatModelPicker";
 import { SessionPanel } from "../components/SessionPanel";
 import { ProviderIcon, resolveProviderIconKey } from "../components/Endpoints";
 import { useStore } from "../store";
-import { cx, StatusBadge, useAction, useToast } from "../components/ui";
+import { cx, StatusBadge, Toggle, useAction, useToast } from "../components/ui";
 import { AtlasMark } from "../components/Logo";
 import { AnimatedMark } from "../components/AnimatedMark";
 import { Markdown, PathBase } from "../components/Markdown";
@@ -21,6 +21,7 @@ import { RunMedia } from "../components/RunMedia";
 export interface ChatConfig {
   mode?: "model" | "agent" | "team" | "auto_team"; provider_id?: string; model?: string; agent_id?: string; team_id?: string;
   auto_team?: boolean;
+  web_search?: boolean;
   tools?: string[]; project_id?: string; access_level?: "read_only" | "workspace" | "computer_use";
   computer_consent_for?: string; system?: string; temperature?: number | null; reasoning_effort?: "low" | "medium" | "high" | "xhigh"; auto_approve?: boolean;
   compare_models?: { provider_id: string; model: string }[];
@@ -227,6 +228,7 @@ function ReasoningControl({ cfg, set, providers }: { cfg: ChatConfig; set: (p: C
 
 function AccessMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => void; h: ReturnType<typeof useHarnessData> }) {
   const [open, setOpen] = useState(false);
+  const { data: webSearch } = useApi<{ connected: boolean }>("/integrations/web-search", ["settings"]);
   const level = cfg.access_level === "computer_use" ? "computer_use" : "workspace";
   const agent = cfg.mode === "agent" ? h.agents.find((a) => a.id === cfg.agent_id) : undefined;
   const provider = h.providers.find((p) => p.id === (agent?.provider_id || cfg.provider_id));
@@ -267,6 +269,20 @@ function AccessMenu({ cfg, set, h }: { cfg: ChatConfig; set: (p: ChatConfig) => 
         <div className="px-1 pt-1.5 text-xs text-ink-3 leading-relaxed">{cfg.project_id ? "Atlas uses files, terminal and connectors as needed. Git changes ask first unless you ask for them." : "Pick a project to let Atlas work on files."}</div>
       </div>
       <MenuLabel>Access for this chat</MenuLabel>
+      <div className="flex items-start gap-3 px-2.5 py-2">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm text-ink">Web search</div>
+          <div className="mt-0.5 text-xs leading-relaxed text-ink-3">{webSearch?.connected ? "Search current public web pages and cite source links." : "Connect Tavily in Settings → Integrations to search the web."}</div>
+        </div>
+        <Toggle checked={!!cfg.web_search} onChange={(v) => set({ web_search: v })} label="Web search for this chat" />
+      </div>
+      <div className="flex items-start gap-3 px-2.5 py-2">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm text-ink">Auto-approve tool actions</div>
+          <div className="mt-0.5 text-xs leading-relaxed text-ink-3">{cfg.auto_approve === false ? "Ask before actions that need approval." : "Tool actions run without per-action approval. Git history or remote changes still ask; blocked commands stay blocked."}</div>
+        </div>
+        <Toggle checked={cfg.auto_approve !== false} onChange={(v) => set({ auto_approve: v })} label="Auto-approve tool actions" />
+      </div>
       {options.map((o) => <MenuRow key={o.id} active={level === o.id} onClick={() => { set({ access_level: o.id }); setOpen(false); }} hint={o.hint}>{o.label}</MenuRow>)}
       <MenuRow active={level === "computer_use"} disabled={!computerReady} onClick={enableComputerUse}
         hint={computerReady ? `${capabilitiesUnverified ? "Model support unverified · " : ""}Use Mac screen and input${localProvider ? " · inference stays on this Mac" : " · screens are shared with provider"}; macOS permissions are required` : teamMode ? "Computer Use isn't available for team chats yet." : !provider || !modelName ? "Choose a model first." : provider.agentic ? "CLI model providers aren't supported for Computer Use." : "This model reports that it doesn't support images or tool calls."}>Atlas Computer Use</MenuRow>

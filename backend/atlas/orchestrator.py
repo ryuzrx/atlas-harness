@@ -783,6 +783,8 @@ depends on the work it checks; no cycles."""
         limit = task_config.get("tool_limit")
         if isinstance(limit, list):  # composer "Tools" selection narrows, never widens, the agent's permissions
             perms = [p for p in perms if p in limit]
+        if task_config.get("web_search") and "web" not in perms:
+            perms.append("web")
         if computer_ready:
             perms.append("computer")
         workspace, wt = project, None

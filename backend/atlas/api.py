@@ -29,7 +29,7 @@ from .mcp import MCPManager
 from .orchestrator import InvalidTransition, Orchestrator
 from .providers import KIND_LABELS, KINDS, ModelRouter, ProviderError
 from .providers.catalog import OLLAMA_LIBRARY, PROVIDER_PRESETS
-from .security import PermissionDenied, delete_secret, resolve_in_workspace, store_secret
+from .security import PermissionDenied, delete_secret, load_secret, resolve_in_workspace, store_secret
 from .templates import TEMPLATES
 from .tools import PERMISSION_GROUPS
 
@@ -257,6 +257,28 @@ def create_app(token: str, db_path: Optional[Path] = None, static_dir: Optional[
         S.bus.changed("settings")
         S.orch.poke()
         return S.db.settings()
+
+    @app.get("/api/integrations/web-search")
+    async def web_search_status():
+        return {"provider": "Tavily", "connected": bool(load_secret("integration:tavily"))}
+
+    @app.put("/api/integrations/web-search")
+    async def connect_web_search(body: Dict[str, Any] = Body(...)):
+        key = str(body.get("api_key") or "").strip()
+        if not key or len(key) > 512:
+            raise HTTPException(400, "Enter a valid Tavily API key.")
+        try:
+            store_secret("integration:tavily", key)
+        except RuntimeError as e:
+            raise HTTPException(501, str(e))
+        S.db.audit("user", "web_search_connect", {"provider": "Tavily"})
+        return {"provider": "Tavily", "connected": True}
+
+    @app.delete("/api/integrations/web-search")
+    async def disconnect_web_search():
+        delete_secret("integration:tavily")
+        S.db.audit("user", "web_search_disconnect", {"provider": "Tavily"})
+        return {"provider": "Tavily", "connected": False}
 
     @app.post("/api/settings/reset")
     async def reset_settings():

@@ -29,7 +29,7 @@ from .events import EventBus
 from .orchestrator import TERMINAL, Orchestrator
 from .providers import ModelRouter, ProviderError
 
-AGENT_TOOL_GROUPS = ("read", "write", "shell", "git", "memory", "mcp")
+AGENT_TOOL_GROUPS = ("read", "write", "shell", "git", "memory", "mcp", "web")
 HISTORY_MESSAGES = 24
 CHAT_PARALLEL = 4  # chats sharing one model can run side by side
 MAX_ATTACHMENT_CHARS = 200_000
@@ -208,12 +208,18 @@ class ChatService:
         mode = cfg.get("mode") or "model"
         # Access is either the workspace or Computer Use; tools can't be narrowed from the chat.
         access_level = "computer_use" if cfg.get("access_level") == "computer_use" else "workspace"
-        # Tools are automatic: a project chat gets everything it needs (git still asks unless the
-        # message asks for it); a chat without a project is a plain, fast model conversation.
+        # Workspace tools are automatic for project chats. Web search is an explicit per-chat opt-in.
+        web_search = cfg.get("web_search") is True
         if mode == "model" and cfg.get("project_id"):
             tools = ["project", "read", "write", "shell", "git", "memory", "mcp"]
+            if web_search:
+                tools.append("web")
         elif mode == "model" and uploads:
             tools = ["read", "write", "shell"]   # large files need tools to open them
+            if web_search:
+                tools.append("web")
+        elif mode == "model" and web_search:
+            tools = ["web"]
         else:
             tools = []
         compare_targets: List[Dict[str, str]] = []
@@ -287,8 +293,9 @@ class ChatService:
                                                       "conversation_id": cid,
                                                       "reasoning_effort": cfg.get("reasoning_effort"),
                                                       "computer_consent_for": cfg.get("computer_consent_for"),
+                                                      "web_search": web_search,
                                                       "auto_team": bool(cfg.get("auto_team")),
-                                               "auto_approve": True})
+                                               "auto_approve": cfg.get("auto_approve") is not False})
             label = {"mode": "team", "team_id": cfg["team_id"]}
         elif mode == "agent" or any(g in AGENT_TOOL_GROUPS for g in tools) or access_level == "computer_use":
             if mode == "agent":
@@ -308,7 +315,8 @@ class ChatService:
                                                "conversation_id": cid,
                                                "reasoning_effort": cfg.get("reasoning_effort"),
                                                "computer_consent_for": cfg.get("computer_consent_for"),
-                                               "auto_approve": True}})
+                                               "web_search": web_search,
+                                               "auto_approve": cfg.get("auto_approve") is not False}})
             label = {"mode": "agent", "agent_id": agent["id"], "agent_name": agent["name"]}
         else:
             task = None
