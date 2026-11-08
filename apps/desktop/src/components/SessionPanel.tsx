@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { AlertCircle, Check, ChevronRight, Folder, GitBranch, Laptop, X } from "lucide-react";
+import { AlertCircle, Check, ChevronRight, Folder, FolderOpen, GitBranch, Globe2, Laptop, ListChecks, X } from "lucide-react";
 import { AnimatedMark } from "./AnimatedMark";
 import { summarizeSteps, useRunSteps } from "./RunTimeline";
-import { Model, Project, useApi } from "../api";
+import { Model, openBrowser, openPath, Project, useApi } from "../api";
 import { cx } from "./ui";
 
 interface Msg { role: string; content: string; status?: string; task_id?: string; data?: Record<string, any> }
@@ -15,18 +15,30 @@ const tokenCount = (usage: Record<string, any> | undefined, ...keys: string[]) =
 const nestedTokenCount = (usage: Record<string, any> | undefined, section: string, ...keys: string[]) =>
   tokenCount(usage?.[section], ...keys);
 
-function Section({ title, children, right }: { title: string; children: React.ReactNode; right?: React.ReactNode }) {
+function Section({ title, children, right, id }: { title: string; children: React.ReactNode; right?: React.ReactNode; id?: string }) {
   return (
-    <section className="px-4 py-4 border-b border-line last:border-0">
+    <section id={id} className="scroll-mt-3 px-4 py-4 border-b border-line last:border-0">
       <div className="flex items-center justify-between mb-2.5"><h3 className="text-sm font-medium text-ink">{title}</h3>{right}</div>
       {children}
     </section>
   );
 }
 
+function ContextRow({ label, value, detail, color }: { label: string; value: string; detail: string; color: string }) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 text-xs">
+      <span className="flex min-w-0 items-center gap-2 text-ink-2">
+        <span aria-hidden="true" className={cx("h-2.5 w-2.5 shrink-0 rounded-[3px]", color)} />
+        <span className="truncate">{label}</span>
+      </span>
+      <span className="tnum text-right text-ink">{value}<span className="ml-1.5 text-ink-3">{detail}</span></span>
+    </div>
+  );
+}
+
 /** Side panel shown once a conversation has started: where it runs, how full the context is, connectors, and changes. */
 export const SessionPanel = React.memo(function SessionPanel({ messages, cfg, onClose }: {
-  messages: Msg[]; cfg: { provider_id?: string; model?: string; project_id?: string; mode?: string }; onClose: () => void;
+  messages: Msg[]; cfg: { provider_id?: string; model?: string; project_id?: string; mode?: string; system?: string }; onClose: () => void;
 }) {
   const { data: projects = [] } = useApi<Project[]>("/projects", ["project"]);
   const project = projects.find((p) => p.id === cfg.project_id);
@@ -54,6 +66,11 @@ export const SessionPanel = React.memo(function SessionPanel({ messages, cfg, on
   const sessionInput = measuredUsage.reduce((sum, u) => sum + (tokenCount(u, "prompt_tokens", "input_tokens") || 0), 0);
   const sessionOutput = measuredUsage.reduce((sum, u) => sum + (tokenCount(u, "completion_tokens", "output_tokens") || 0), 0);
   const hasRequestUsage = requestInput !== undefined || requestOutput !== undefined;
+  // Character-based sizing is deliberately marked as an estimate. Provider input usage
+  // remains the source of truth for the total; most providers do not expose prompt parts.
+  const conversationEstimate = Math.ceil(messages.reduce((sum, message) => sum + (message.content?.length || 0), 0) / 4);
+  const instructionEstimate = cfg.system?.trim() ? Math.ceil(cfg.system.trim().length / 4) : 0;
+  const usedPercent = requestInput !== undefined && windowSize > 0 ? Math.min(100, requestInput / windowSize * 100) : undefined;
   const servers: { name: string; running: boolean; tools: number }[] = mcp?.servers || [];
   const connected = servers.filter((s) => s.running);
 
@@ -66,8 +83,15 @@ export const SessionPanel = React.memo(function SessionPanel({ messages, cfg, on
         <span className="text-base text-ink-2">Session</span>
         <button onClick={onClose} aria-label="Close session panel" className="no-drag h-8 w-8 rounded-md flex items-center justify-center text-ink-2 hover:text-ink hover:bg-hover"><X size={16} /></button>
       </div>
+      <div role="toolbar" aria-label="Session tools" className="no-drag flex items-center gap-1 px-3 pb-3 border-b border-line">
+        <button onClick={() => document.getElementById("session-progress")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          title="Jump to progress" aria-label="Jump to progress" className="h-8 w-8 rounded-md flex items-center justify-center bg-active text-ink hover:bg-hover"><ListChecks size={17} /></button>
+        <button onClick={() => openBrowser()} title="Open web browser" aria-label="Open web browser" className="h-8 w-8 rounded-md flex items-center justify-center text-ink-2 hover:text-ink hover:bg-hover"><Globe2 size={17} /></button>
+        <button onClick={() => project && openPath(project.path)} disabled={!project?.exists} title={project ? "Reveal project in Finder" : "No project attached"} aria-label="Reveal project in Finder" className="h-8 w-8 rounded-md flex items-center justify-center text-ink-2 hover:text-ink hover:bg-hover disabled:opacity-35 disabled:cursor-not-allowed"><FolderOpen size={17} /></button>
+        <span className="ml-auto text-[11px] text-ink-3">{model?.name || "Atlas session"}</span>
+      </div>
 
-      <Section title="Progress" right={runLive ? <AnimatedMark size={14} play="shimmer" /> : undefined}>
+      <Section id="session-progress" title="Progress" right={runLive ? <AnimatedMark size={14} play="shimmer" /> : undefined}>
         {!lastRun ? <div className="text-sm text-ink-3">Steps appear here once Atlas starts working.</div> : (
           <>
             <div className="text-sm text-ink-2 mb-2">{steps.length ? summarizeSteps(steps) : runLive ? "Starting…" : "No tools were used."}</div>
@@ -93,22 +117,33 @@ export const SessionPanel = React.memo(function SessionPanel({ messages, cfg, on
         {!project && <div className="text-sm text-ink-3 mt-1">No project attached. Pick one in the Access menu below the message box.</div>}
       </Section>
 
-      <Section title="Context">
-        <dl className="mt-3 space-y-1.5 text-sm">
-          <div className="flex justify-between"><dt className="text-ink-2">Messages</dt><dd className="tnum text-ink-2">{messages.length}</dd></div>
-          {hasRequestUsage ? <>
-            <div className="flex justify-between"><dt className="text-ink-2">Last request · input</dt><dd className="tnum text-ink-2">{requestInput === undefined ? "—" : `${fmt(requestInput)} reported`}</dd></div>
-            <div className="flex justify-between"><dt className="text-ink-2">Last request · output</dt><dd className="tnum text-ink-2">{requestOutput === undefined ? "—" : `${fmt(requestOutput)} reported`}</dd></div>
-            <div className="flex justify-between"><dt className="text-ink-2">Session total · input</dt><dd className="tnum text-ink-2">{fmt(sessionInput)}</dd></div>
-            <div className="flex justify-between"><dt className="text-ink-2">Session total · output</dt><dd className="tnum text-ink-2">{fmt(sessionOutput)}</dd></div>
-            {cachedInput !== undefined && <div className="flex justify-between"><dt className="text-ink-2">Cached input · last request</dt><dd className="tnum text-ink-2">{fmt(cachedInput)}</dd></div>}
-            {reasoningOutput !== undefined && <div className="flex justify-between"><dt className="text-ink-2">Reasoning · last request</dt><dd className="tnum text-ink-2">{fmt(reasoningOutput)}</dd></div>}
-          </> : <div className="text-ink-3">Token usage is not reported by this provider.</div>}
-          <div className="flex justify-between"><dt className="text-ink-2">Active context</dt><dd className="text-ink-3">Not reported</dd></div>
-          {windowSize ? <div className="flex justify-between"><dt className="text-ink-2">Context window</dt><dd className="tnum text-ink-2">{fmt(windowSize)}</dd></div> : null}
-        </dl>
-        {!!windowSize && <div className="mt-3 text-xs text-ink-3">{model?.details?.context_estimated ? "Context window is an Atlas estimate." : "Context window supplied by the provider."} Active context and remaining capacity cannot be determined from this provider's response.</div>}
-        {!windowSize && <div className="mt-3 text-xs text-ink-3">This provider does not report a context window or active context usage.</div>}
+      <Section title="Context used">
+        <div className="mt-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-sm font-medium text-ink">{usedPercent === undefined ? "Usage unavailable" : `${Math.round(usedPercent)}% of window`}</span>
+            <span className="text-xs text-ink-2 tnum">{requestInput === undefined ? "—" : fmt(requestInput)}{windowSize ? ` / ${fmt(windowSize)}` : " input tokens"}</span>
+          </div>
+          <div role="progressbar" aria-label="Last request context window used" aria-valuemin={0} aria-valuemax={100} aria-valuenow={usedPercent === undefined ? undefined : Math.round(usedPercent)}
+            className="mt-2 h-2 overflow-hidden rounded-full bg-active">
+            {usedPercent !== undefined && <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${usedPercent}%` }} />}
+          </div>
+          <div className="mt-1.5 text-[11px] text-ink-3">Last request · provider reported</div>
+        </div>
+
+        <div className="mt-4 space-y-2.5">
+          <ContextRow label="Conversation text" value={fmt(conversationEstimate)} detail="estimated" color="bg-accent" />
+          {instructionEstimate > 0 && <ContextRow label="Custom instructions" value={fmt(instructionEstimate)} detail="estimated" color="bg-warn" />}
+          {requestOutput !== undefined && <ContextRow label="Response output" value={fmt(requestOutput)} detail="reported" color="bg-ok" />}
+          {cachedInput !== undefined && <ContextRow label="Cached input" value={fmt(cachedInput)} detail="reported" color="bg-ink-3" />}
+          <div className="pt-2 border-t border-line flex justify-between text-xs">
+            <span className="text-ink-2">Messages in chat</span><span className="tnum text-ink">{messages.length}</span>
+          </div>
+          {windowSize > 0 && requestInput !== undefined && <div className="flex justify-between text-xs">
+            <span className="text-ink-2">Approx. remaining</span><span className="tnum text-ink">{fmt(Math.max(0, windowSize - requestInput))}</span>
+          </div>}
+        </div>
+        <div className="mt-3 text-[11px] leading-relaxed text-ink-3">Totals come from the provider. Conversation and instruction counts are rough estimates; hidden system and tool prompts are not itemized. {windowSize ? (model?.details?.context_estimated ? "The context window size is estimated." : "Window size is provider supplied.") : "This provider does not report its context window."}</div>
+        {hasRequestUsage && <div className="sr-only">Session totals: {fmt(sessionInput)} input tokens and {fmt(sessionOutput)} output tokens.</div>}
       </Section>
 
       <Section title="Connectors">
