@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { MessageSquare, FolderKanban, FolderPlus, Folder, FolderGit2, Sparkles, Layers, Clock3, Puzzle, SquarePlus, Plus, Search, Settings, MoreHorizontal, PanelLeftClose, PanelLeftOpen, ChevronRight, ChevronsUpDown, X } from "lucide-react";
-import { api, Project, useApi } from "../api";
+import { MessageSquare, FolderKanban, FolderPlus, Folder, FolderGit2, Sparkles, Layers, Clock3, Puzzle, SquarePlus, Plus, Search, Settings, MoreHorizontal, PanelLeftClose, PanelLeftOpen, ChevronRight, ChevronsUpDown, X, Globe2 } from "lucide-react";
+import { api, openBrowser, Project, useApi } from "../api";
 import { useAddProject } from "./useAddProject";
 import { Mode, RouteName, useStore } from "../store";
 import { cx, Menu, useAction } from "./ui";
@@ -305,6 +305,7 @@ export function Sidebar({ user }: { user?: string }) {
       </div>
       <ModeSwitch collapsed={collapsed} />
       <nav aria-label="Primary" className={cx("shrink-0 flex flex-col gap-1 px-3 pt-5 pb-4")}>
+        <NavItem active={false} collapsed={collapsed} icon={Globe2} label="Browser" onClick={() => openBrowser()} />
         {NAV.map((n) => <NavItem key={n.id} active={n.match.includes(route.name)} collapsed={collapsed} icon={n.icon} label={n.label}
           onClick={() => go({ name: n.id })} />)}
       </nav>

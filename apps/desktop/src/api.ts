@@ -194,6 +194,18 @@ export function openExternal(url: string) {
   if (isNative()) nativeCall("openURL", { url }); else window.open(url, "_blank", "noopener,noreferrer");
 }
 
+/** Open a search or URL in Atlas's lightweight native browser when available. */
+export function openBrowser(query = "") {
+  const value = query.trim();
+  const url = /^https?:\/\//i.test(value)
+    ? value
+    : value
+      ? `https://www.google.com/search?q=${encodeURIComponent(value)}`
+      : "https://www.google.com/";
+  if (isNative()) nativeCall("browser", { url });
+  else window.open(url, "_blank", "noopener,noreferrer");
+}
+
 export function openPath(path: string) {
   if (isNative()) nativeCall("reveal", { path });
 }

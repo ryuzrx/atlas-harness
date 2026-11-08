@@ -21,11 +21,139 @@ final class DragWebView: WKWebView {
     override var mouseDownCanMoveWindow: Bool { false }
 }
 
+/// A small, separate browser window backed by macOS WebKit (no bundled Chromium runtime).
+final class AtlasBrowserWindow: NSObject, WKNavigationDelegate, WKUIDelegate {
+    private let window: NSWindow
+    private let webView: WKWebView
+    private let address = NSTextField()
+    private let backButton = NSButton(title: "‹", target: nil, action: nil)
+    private let forwardButton = NSButton(title: "›", target: nil, action: nil)
+    private let reloadButton = NSButton(title: "↻", target: nil, action: nil)
+
+    override init() {
+        let config = WKWebViewConfiguration()
+        webView = WKWebView(frame: .zero, configuration: config)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 760),
+                          styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                          backing: .buffered, defer: false)
+        super.init()
+        window.title = "Atlas Browser"
+        window.minSize = NSSize(width: 640, height: 420)
+        window.center()
+        window.backgroundColor = NSColor.windowBackgroundColor
+
+        let toolbar = NSStackView()
+        toolbar.orientation = .horizontal
+        toolbar.alignment = .centerY
+        toolbar.spacing = 8
+        toolbar.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+        for (button, selector, label) in [(backButton, #selector(goBack), "Back"),
+                                          (forwardButton, #selector(goForward), "Forward"),
+                                          (reloadButton, #selector(reload), "Reload")] {
+            button.target = self
+            button.action = selector
+            button.toolTip = label
+            button.bezelStyle = .rounded
+            button.setAccessibilityLabel(label)
+            toolbar.addArrangedSubview(button)
+        }
+        address.placeholderString = "Search Google or enter a website"
+        address.font = .systemFont(ofSize: 14)
+        address.focusRingType = .default
+        address.bezelStyle = .roundedBezel
+        address.target = self
+        address.action = #selector(submitAddress)
+        address.setAccessibilityLabel("Search Google or enter a website")
+        address.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        address.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        toolbar.addArrangedSubview(address)
+        let go = NSButton(title: "Go", target: self, action: #selector(submitAddress))
+        go.bezelStyle = .rounded
+        go.setContentHuggingPriority(.required, for: .horizontal)
+        toolbar.addArrangedSubview(go)
+
+        webView.navigationDelegate = self
+        webView.uiDelegate = self
+        let root = NSView()
+        root.translatesAutoresizingMaskIntoConstraints = false
+        toolbar.translatesAutoresizingMaskIntoConstraints = false
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(toolbar)
+        root.addSubview(webView)
+        NSLayoutConstraint.activate([
+            toolbar.topAnchor.constraint(equalTo: root.topAnchor), toolbar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            toolbar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            address.widthAnchor.constraint(greaterThanOrEqualToConstant: 300),
+            webView.topAnchor.constraint(equalTo: toolbar.bottomAnchor), webView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: root.trailingAnchor), webView.bottomAnchor.constraint(equalTo: root.bottomAnchor)
+        ])
+        window.contentView = root
+    }
+
+    func open(_ raw: String?) {
+        let value = String((raw ?? "").prefix(2048)).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            webView.load(URLRequest(url: URL(string: "https://www.google.com/")!))
+            return
+        }
+        let target: URL
+        if let url = URL(string: value), let scheme = url.scheme?.lowercased(),
+           ["https", "http"].contains(scheme), url.host != nil {
+            target = url
+        } else if value.contains(".") && !value.contains(" "),
+                  let url = URL(string: "https://" + value), url.host != nil {
+            target = url
+        } else {
+            var components = URLComponents(string: "https://www.google.com/search")!
+            components.queryItems = [URLQueryItem(name: "q", value: value)]
+            target = components.url!
+        }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        webView.load(URLRequest(url: target))
+        updateControls()
+    }
+
+    @objc private func submitAddress() { open(address.stringValue) }
+    @objc private func goBack() { webView.goBack() }
+    @objc private func goForward() { webView.goForward() }
+    @objc private func reload() { webView.reload() }
+
+    private func updateControls() {
+        backButton.isEnabled = webView.canGoBack
+        forwardButton.isEnabled = webView.canGoForward
+        if let url = webView.url { address.stringValue = url.absoluteString }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { updateControls() }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { updateControls() }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { updateControls() }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let scheme = navigationAction.request.url?.scheme?.lowercased(), ["https", "http"].contains(scheme) else {
+            decisionHandler(.cancel); return
+        }
+        decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        guard navigationAction.targetFrame == nil, let url = navigationAction.request.url,
+              ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+        webView.load(URLRequest(url: url))
+        return nil
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
     var window: NSWindow!
     var webView: DragWebView!
     var effectView: NSView!
     var backend: Process?
+    var browserWindow: AtlasBrowserWindow?
     var port: Int = 0
     let token: String = {
         var bytes = [UInt8](repeating: 0, count: 32)
@@ -263,6 +391,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKSc
             return
         }
         switch type {
+        case "browser":
+            guard message.frameInfo.isMainFrame,
+                  message.frameInfo.securityOrigin.host == "127.0.0.1",
+                  message.frameInfo.securityOrigin.port == port else {
+                reply(id, ["error": "Browser requests must come from Atlas's local app window."])
+                return
+            }
+            if browserWindow == nil { browserWindow = AtlasBrowserWindow() }
+            browserWindow?.open(body["url"] as? String)
+            reply(id, true)
         case "drag":
             if let e = webView.lastMouseDown { window.performDrag(with: e) }
         case "zoom":
