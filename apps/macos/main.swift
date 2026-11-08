@@ -22,17 +22,31 @@ final class DragWebView: WKWebView {
 }
 
 /// A small, separate browser window backed by macOS WebKit (no bundled Chromium runtime).
+private final class AtlasBrowserTab {
+    let id = UUID()
+    let webView: WKWebView
+    let item = NSStackView()
+    let selectButton = NSButton(title: "New tab", target: nil, action: nil)
+    let closeButton = NSButton(title: "×", target: nil, action: nil)
+    var title = "New tab"
+
+    init(webView: WKWebView) { self.webView = webView }
+}
+
 final class AtlasBrowserWindow: NSObject, WKNavigationDelegate, WKUIDelegate {
     private let window: NSWindow
-    private let webView: WKWebView
     private let address = NSTextField()
     private let backButton = NSButton(title: "‹", target: nil, action: nil)
     private let forwardButton = NSButton(title: "›", target: nil, action: nil)
     private let reloadButton = NSButton(title: "↻", target: nil, action: nil)
+    private let tabBar = NSStackView()
+    private let tabScrollView = NSScrollView()
+    private let pageContainer = NSView()
+    private let newTabButton = NSButton(title: "+", target: nil, action: nil)
+    private var tabs: [AtlasBrowserTab] = []
+    private var activeTabID: UUID?
 
     override init() {
-        let config = WKWebViewConfiguration()
-        webView = WKWebView(frame: .zero, configuration: config)
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 760),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)
@@ -72,30 +86,55 @@ final class AtlasBrowserWindow: NSObject, WKNavigationDelegate, WKUIDelegate {
         go.setContentHuggingPriority(.required, for: .horizontal)
         toolbar.addArrangedSubview(go)
 
-        webView.navigationDelegate = self
-        webView.uiDelegate = self
+        tabBar.orientation = .horizontal
+        tabBar.alignment = .centerY
+        tabBar.spacing = 4
+        tabBar.edgeInsets = NSEdgeInsets(top: 4, left: 10, bottom: 4, right: 6)
+        tabBar.translatesAutoresizingMaskIntoConstraints = false
+        tabScrollView.documentView = tabBar
+        tabBar.heightAnchor.constraint(equalToConstant: 42).isActive = true
+        tabBar.widthAnchor.constraint(greaterThanOrEqualTo: tabScrollView.contentView.widthAnchor).isActive = true
+        tabScrollView.hasHorizontalScroller = false
+        tabScrollView.hasVerticalScroller = false
+        tabScrollView.drawsBackground = false
+        newTabButton.target = self
+        newTabButton.action = #selector(addTab)
+        newTabButton.bezelStyle = .rounded
+        newTabButton.toolTip = "New tab"
+        newTabButton.setAccessibilityLabel("New browser tab")
+
         let root = NSView()
         root.translatesAutoresizingMaskIntoConstraints = false
         toolbar.translatesAutoresizingMaskIntoConstraints = false
-        webView.translatesAutoresizingMaskIntoConstraints = false
+        tabScrollView.translatesAutoresizingMaskIntoConstraints = false
+        newTabButton.translatesAutoresizingMaskIntoConstraints = false
+        pageContainer.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(toolbar)
-        root.addSubview(webView)
+        root.addSubview(tabScrollView)
+        root.addSubview(newTabButton)
+        root.addSubview(pageContainer)
         NSLayoutConstraint.activate([
             toolbar.topAnchor.constraint(equalTo: root.topAnchor), toolbar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             toolbar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             address.widthAnchor.constraint(greaterThanOrEqualToConstant: 300),
-            webView.topAnchor.constraint(equalTo: toolbar.bottomAnchor), webView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: root.trailingAnchor), webView.bottomAnchor.constraint(equalTo: root.bottomAnchor)
+            tabScrollView.topAnchor.constraint(equalTo: toolbar.bottomAnchor), tabScrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            tabScrollView.trailingAnchor.constraint(equalTo: newTabButton.leadingAnchor), tabScrollView.heightAnchor.constraint(equalToConstant: 42),
+            newTabButton.centerYAnchor.constraint(equalTo: tabScrollView.centerYAnchor), newTabButton.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -10),
+            newTabButton.widthAnchor.constraint(equalToConstant: 32),
+            pageContainer.topAnchor.constraint(equalTo: tabScrollView.bottomAnchor), pageContainer.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            pageContainer.trailingAnchor.constraint(equalTo: root.trailingAnchor), pageContainer.bottomAnchor.constraint(equalTo: root.bottomAnchor)
         ])
         window.contentView = root
+        _ = createTab()
     }
 
     func open(_ raw: String?) {
         let value = String((raw ?? "").prefix(2048)).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let tab = activeTab else { return }
         guard !value.isEmpty else {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
-            webView.load(URLRequest(url: URL(string: "https://www.google.com/")!))
+            tab.webView.load(URLRequest(url: URL(string: "https://www.google.com/")!))
             return
         }
         let target: URL
@@ -112,24 +151,115 @@ final class AtlasBrowserWindow: NSObject, WKNavigationDelegate, WKUIDelegate {
         }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        webView.load(URLRequest(url: target))
-        updateControls()
+        tab.webView.load(URLRequest(url: target))
+        updateControls(for: tab)
+    }
+
+    private var activeTab: AtlasBrowserTab? { tabs.first { $0.id == activeTabID } }
+
+    private func createTab(url: URL? = nil) -> AtlasBrowserTab {
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .default()
+        let webView = WKWebView(frame: .zero, configuration: config)
+        let tab = AtlasBrowserTab(webView: webView)
+        webView.navigationDelegate = self
+        webView.uiDelegate = self
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        pageContainer.addSubview(webView)
+        NSLayoutConstraint.activate([
+            webView.topAnchor.constraint(equalTo: pageContainer.topAnchor), webView.leadingAnchor.constraint(equalTo: pageContainer.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: pageContainer.trailingAnchor), webView.bottomAnchor.constraint(equalTo: pageContainer.bottomAnchor)
+        ])
+
+        tab.item.orientation = .horizontal
+        tab.item.alignment = .centerY
+        tab.item.spacing = 3
+        tab.item.wantsLayer = true
+        tab.item.layer?.cornerRadius = 8
+        tab.item.translatesAutoresizingMaskIntoConstraints = false
+        tab.selectButton.target = self
+        tab.selectButton.action = #selector(selectTab(_:))
+        tab.selectButton.identifier = NSUserInterfaceItemIdentifier(tab.id.uuidString)
+        tab.selectButton.title = tab.title
+        tab.selectButton.image = NSImage(systemSymbolName: "globe", accessibilityDescription: "Website")
+        tab.selectButton.imagePosition = .imageLeading
+        tab.selectButton.bezelStyle = .regularSquare
+        tab.selectButton.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        tab.selectButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        tab.selectButton.lineBreakMode = .byTruncatingTail
+        tab.selectButton.setAccessibilityLabel("Browser tab: \(tab.title)")
+        tab.closeButton.target = self
+        tab.closeButton.action = #selector(closeTab(_:))
+        tab.closeButton.identifier = NSUserInterfaceItemIdentifier(tab.id.uuidString)
+        tab.closeButton.bezelStyle = .regularSquare
+        tab.closeButton.setAccessibilityLabel("Close tab")
+        tab.closeButton.toolTip = "Close tab"
+        tab.item.addArrangedSubview(tab.selectButton)
+        tab.item.addArrangedSubview(tab.closeButton)
+        tab.item.widthAnchor.constraint(greaterThanOrEqualToConstant: 150).isActive = true
+        tab.item.widthAnchor.constraint(lessThanOrEqualToConstant: 260).isActive = true
+        tabBar.addArrangedSubview(tab.item)
+        tabs.append(tab)
+        activate(tab)
+        if let url { webView.load(URLRequest(url: url)) }
+        return tab
+    }
+
+    private func activate(_ tab: AtlasBrowserTab) {
+        activeTabID = tab.id
+        for item in tabs {
+            item.webView.isHidden = item.id != tab.id
+            item.item.layer?.backgroundColor = item.id == tab.id
+                ? NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
+                : NSColor.clear.cgColor
+        }
+        updateControls(for: tab)
+    }
+
+    @objc private func addTab() { _ = createTab(url: URL(string: "https://www.google.com/")) }
+    @objc private func selectTab(_ sender: NSButton) {
+        guard let id = sender.identifier?.rawValue,
+              let tab = tabs.first(where: { $0.id.uuidString == id }) else { return }
+        activate(tab)
+    }
+    @objc private func closeTab(_ sender: NSButton) {
+        guard let id = sender.identifier?.rawValue,
+              let index = tabs.firstIndex(where: { $0.id.uuidString == id }) else { return }
+        let tab = tabs.remove(at: index)
+        tabBar.removeArrangedSubview(tab.item)
+        tab.item.removeFromSuperview()
+        tab.webView.removeFromSuperview()
+        if tabs.isEmpty {
+            _ = createTab(url: URL(string: "https://www.google.com/"))
+        } else if activeTabID == tab.id {
+            activate(tabs[min(index, tabs.count - 1)])
+        }
     }
 
     @objc private func submitAddress() { open(address.stringValue) }
-    @objc private func goBack() { webView.goBack() }
-    @objc private func goForward() { webView.goForward() }
-    @objc private func reload() { webView.reload() }
+    @objc private func goBack() { activeTab?.webView.goBack() }
+    @objc private func goForward() { activeTab?.webView.goForward() }
+    @objc private func reload() { activeTab?.webView.reload() }
 
-    private func updateControls() {
-        backButton.isEnabled = webView.canGoBack
-        forwardButton.isEnabled = webView.canGoForward
-        if let url = webView.url { address.stringValue = url.absoluteString }
+    private func updateControls(for tab: AtlasBrowserTab) {
+        guard activeTabID == tab.id else { return }
+        backButton.isEnabled = tab.webView.canGoBack
+        forwardButton.isEnabled = tab.webView.canGoForward
+        if let url = tab.webView.url { address.stringValue = url.absoluteString }
+        window.title = tab.title == "New tab" ? "Atlas Browser" : "\(tab.title) — Atlas Browser"
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { updateControls() }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { updateControls() }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { updateControls() }
+    private func tab(for webView: WKWebView) -> AtlasBrowserTab? { tabs.first { $0.webView === webView } }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard let tab = tab(for: webView) else { return }
+        tab.title = webView.title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? webView.url?.host ?? "Website"
+        tab.selectButton.title = tab.title
+        tab.selectButton.setAccessibilityLabel("Browser tab: \(tab.title)")
+        updateControls(for: tab)
+    }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { if let tab = tab(for: webView) { updateControls(for: tab) } }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { if let tab = tab(for: webView) { updateControls(for: tab) } }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -143,9 +273,12 @@ final class AtlasBrowserWindow: NSObject, WKNavigationDelegate, WKUIDelegate {
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         guard navigationAction.targetFrame == nil, let url = navigationAction.request.url,
               ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return nil }
-        webView.load(URLRequest(url: url))
-        return nil
+        return createTab(url: url).webView
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
