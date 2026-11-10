@@ -1,0 +1,35 @@
+BharatCode Build League: Round 1
+Project: Atlas (Your models. Your workspace.)
+Direction: Coding and developer tools
+
+What it is
+Atlas is a macOS app for chatting with AI models and running teams of AI agents
+on real project folders. You can use local models (Ollama, MLX, llama.cpp,
+LM Studio) or cloud providers with your own keys.
+
+What it does
+- Streaming chat with Markdown, code blocks, file attachments, and history.
+- Model picker that supports local runtimes, cloud providers, and existing
+  Claude Code and Codex sign-ins.
+- Team mode: a lead agent plans an objective and delegates it to agents, and a
+  run panel shows each agent's activity, approvals, and results.
+- Work mode: agents operate on a chosen project folder. In Git projects they can
+  write in isolated worktrees so changes are reviewed before merging.
+- Permission prompts for risky actions, and an in-app browser for web pages.
+- Custom skills and optional integrations (MCP). Hooks run only when enabled.
+
+Why it is useful for developers
+Atlas keeps agent work inspectable. Each run shows what it did, asks before
+risky actions, and keeps changes in worktrees until you review them.
+
+Status
+Working macOS app with a Python backend (FastAPI) and a desktop UI. The backend
+test suite passes locally.
+
+Repository
+https://github.com/ryuzrx/atlas-harness
+
+Build notes
+- Backend: Python, see backend/requirements.txt
+- macOS app: build with the project's build.command
+- Tests: run pytest from the repository root against backend/atlas
